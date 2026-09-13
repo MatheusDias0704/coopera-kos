@@ -1,11 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 /**
- * Browser-safe Supabase client. It deliberately returns null in local visual
- * mode, so the interface can be reviewed before infrastructure is provisioned.
+ * Client safe for use in the browser. All data authorization is enforced by RLS.
  */
 export const supabase = url && key
   ? createClient(url, key, {

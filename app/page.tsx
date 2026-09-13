@@ -1,270 +1,136 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import {
-  ArrowRight, Bell, BookOpen, Check, ChevronDown, CircleHelp, FileText, Heart, Home as HomeIcon,
-  Image as ImageIcon, KeyRound, LockKeyhole, Mail, Menu, MessageCircle, MoreHorizontal,
-  Paperclip, Plus, Search, Send, ShieldCheck, SlidersHorizontal, Sparkles, UserRound,
-  Users, Video, X,
-} from "lucide-react";
-import { comments as initialComments, CommunityCase, CaseMode, CaseStatus, Role, starterCases } from "./data";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { Bell, BookOpen, Check, ChevronDown, FileText, Heart, Home, Image as ImageIcon, KeyRound, LockKeyhole, Mail, Menu, MessageCircle, MoreHorizontal, Paperclip, Plus, Search, Send, ShieldCheck, Sparkles, Users, Video, X } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
+import type { CaseMode, CaseRecord, CaseStatus, Membership, Profile, Role } from "../lib/types";
 
-const filters: { label: string; value: "todos" | CaseStatus }[] = [
-  { label: "Todos", value: "todos" },
-  { label: "Em discussão", value: "em discussão" },
-  { label: "Resolvidos", value: "resolvido" },
-];
+const caseModes: Array<{ value: CaseMode; label: string }> = [{ value: "roteiro_clinico", label: "Roteiro clínico" }, { value: "texto_livre", label: "Texto livre" }, { value: "modelo", label: "Modelo" }];
+const caseStatus: Record<CaseStatus, string> = { em_discussao: "em discussão", resolvido: "resolvido", oculto: "oculto" };
+const nowText = (date: string) => new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(date));
+const initials = (name?: string | null) => name?.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "CK";
 
-function MediaGlyph({ type }: { type: CommunityCase["media"] }) {
-  if (type === "photo") return <ImageIcon size={16} />;
-  if (type === "video") return <Video size={16} />;
-  if (type === "document") return <FileText size={16} />;
-  return null;
-}
-
-export default function Home() {
-  const [authenticated, setAuthenticated] = useState(false);
-  const [previewMode, setPreviewMode] = useState(false);
-  const [authReady, setAuthReady] = useState(false);
-  const [needsPasswordSetup, setNeedsPasswordSetup] = useState(false);
-  const [memberRole, setMemberRole] = useState<Role | null>(null);
-  const [memberName, setMemberName] = useState("");
-  const [cases, setCases] = useState(starterCases);
+export default function HomePage() {
+  const [sessionUser, setSessionUser] = useState<{ id: string; email?: string } | null>(null);
+  const [membership, setMembership] = useState<Membership | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [cases, setCases] = useState<CaseRecord[]>([]);
+  const [selected, setSelected] = useState<CaseRecord | null>(null);
+  const [comments, setComments] = useState<Array<{ id: string; body: string; created_at: string; profiles: Profile | null }>>([]);
+  const [liked, setLiked] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"todos" | CaseStatus>("todos");
-  const [selected, setSelected] = useState<CommunityCase | null>(starterCases[0]);
+  const [ready, setReady] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
   const [noticeOpen, setNoticeOpen] = useState(false);
-  const [messagesOpen, setMessagesOpen] = useState(false);
-  const [commentList, setCommentList] = useState(initialComments);
-  const [commentText, setCommentText] = useState("");
-  const [liked, setLiked] = useState<number[]>([]);
-  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  const [messageOpen, setMessageOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [toast, setToast] = useState("");
+  const [legalDocuments, setLegalDocuments] = useState<Array<{ slug: string; version: string; title: string }>>([]);
+  const [legalAccepted, setLegalAccepted] = useState(false);
 
-  const visibleCases = useMemo(() => cases.filter((item) => {
-    const haystack = `${item.title} ${item.tags.join(" ")} ${item.author}`.toLowerCase();
-    return (status === "todos" || item.status === status) && haystack.includes(query.toLowerCase());
-  }), [cases, query, status]);
+  const loadWorkspace = useCallback(async (userId: string) => {
+    if (!supabase) return;
+    const [{ data: profileData }, { data: membershipData }] = await Promise.all([
+      supabase.from("profiles").select("id,full_name,initials,avatar_url").eq("id", userId).single(),
+      supabase.from("memberships").select("cohort_id,role,active,cohorts(id,name)").eq("user_id", userId).eq("active", true).limit(1).maybeSingle(),
+    ]);
+    setProfile(profileData as Profile | null);
+    setMembership(membershipData as unknown as Membership | null);
+    const [{ data: documents }, { data: acceptances }] = await Promise.all([
+      supabase.from("legal_documents").select("slug,version,title").eq("active", true),
+      supabase.from("legal_acceptances").select("document_slug,document_version").eq("user_id", userId),
+    ]);
+    const activeDocuments = documents ?? [];
+    setLegalDocuments(activeDocuments);
+    setLegalAccepted(activeDocuments.length > 0 && activeDocuments.every((document) => (acceptances ?? []).some((acceptance) => acceptance.document_slug === document.slug && acceptance.document_version === document.version)));
+    if (!membershipData) { setCases([]); setReady(true); return; }
+    const { data: caseData, error } = await supabase.from("clinical_cases")
+      .select("id,code,title,mode,status,clinical_context,assessment,body,template_name,community_question,tags,created_at,resolved_at,author_id,profiles!clinical_cases_author_id_fkey(id,full_name,initials,avatar_url),mentor_summaries(id,body,created_at,profiles!mentor_summaries_mentor_id_fkey(id,full_name,initials,avatar_url)),case_attachments(id,filename,kind,storage_path),case_comments(count),case_reactions(count)")
+      .eq("cohort_id", membershipData.cohort_id).order("created_at", { ascending: false });
+    if (error) setToast("Não foi possível carregar os casos.");
+    const nextCases = (caseData ?? []) as unknown as CaseRecord[];
+    setCases(nextCases); setSelected((old) => nextCases.find((item) => item.id === old?.id) ?? nextCases[0] ?? null);
+    const { data: reactionData } = await supabase.from("case_reactions").select("case_id").eq("user_id", userId);
+    setLiked((reactionData ?? []).map((reaction) => reaction.case_id));
+    setReady(true);
+  }, []);
 
   useEffect(() => {
     const client = supabase;
     if (!client) return;
-    setNeedsPasswordSetup(new URLSearchParams(window.location.search).get("set-password") === "1");
-    const syncSession = async () => {
-      const { data: { session } } = await client.auth.getSession();
-      setAuthenticated(Boolean(session));
-      setMemberName(session?.user.user_metadata.full_name || session?.user.email?.split("@")[0] || "Participante");
-      if (session) {
-        const { data } = await client.from("memberships").select("role").eq("user_id", session.user.id).eq("active", true).limit(1).maybeSingle();
-        setMemberRole((data?.role as Role | undefined) ?? null);
-      }
-      setAuthReady(true);
-    };
-    void syncSession();
-    const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
-      setAuthenticated(Boolean(session));
-      setMemberName(session?.user.user_metadata.full_name || session?.user.email?.split("@")[0] || "Participante");
-    });
+    const boot = async () => { const { data: { session } } = await client.auth.getSession(); setSessionUser(session?.user ? { id: session.user.id, email: session.user.email } : null); if (session?.user) await loadWorkspace(session.user.id); else setReady(true); };
+    void boot();
+    const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => { setSessionUser(session?.user ? { id: session.user.id, email: session.user.email } : null); if (session?.user) void loadWorkspace(session.user.id); else { setCases([]); setMembership(null); setReady(true); } });
     return () => subscription.unsubscribe();
-  }, []);
+  }, [loadWorkspace]);
 
-  if (!isSupabaseConfigured && !previewMode) return <ConfigurationScreen onPreview={() => setPreviewMode(true)} />;
-  if (!authReady && !previewMode) return <LoadingScreen />;
-  if (authenticated && needsPasswordSetup) return <SetPasswordScreen onComplete={() => setNeedsPasswordSetup(false)} />;
-  if (!authenticated && !previewMode) return <LoginScreen />;
+  useEffect(() => {
+    if (!selected || !supabase) { setComments([]); return; }
+    void supabase.from("case_comments").select("id,body,created_at,profiles!case_comments_author_id_fkey(id,full_name,initials,avatar_url)").eq("case_id", selected.id).order("created_at").then(({ data }) => setComments((data ?? []) as unknown as typeof comments));
+  }, [selected?.id]);
 
-  const addReaction = (id: number) => {
-    setLiked((old) => old.includes(id) ? old.filter((value) => value !== id) : [...old, id]);
-    setCases((old) => old.map((item) => item.id === id ? { ...item, reactions: item.reactions + (liked.includes(id) ? -1 : 1) } : item));
-    if (selected?.id === id) setSelected((old) => old ? { ...old, reactions: old.reactions + (liked.includes(id) ? -1 : 1) } : old);
+  const refresh = () => sessionUser && void loadWorkspace(sessionUser.id);
+  const visibleCases = useMemo(() => cases.filter((item) => (status === "todos" || item.status === status) && `${item.title} ${item.tags.join(" ")} ${item.profiles?.full_name ?? ""}`.toLowerCase().includes(query.toLowerCase())), [cases, query, status]);
+  const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(""), 4000); };
+
+  if (!isSupabaseConfigured) return <ConfigurationScreen />;
+  if (!ready) return <LoadingScreen />;
+  if (!sessionUser) return <LoginScreen />;
+  if (!membership || !profile) return <AccessPending onSignOut={() => void supabase?.auth.signOut()} />;
+  if (!legalAccepted) return <LegalGate documents={legalDocuments} userId={sessionUser.id} onAccepted={() => setLegalAccepted(true)} onSignOut={() => void supabase?.auth.signOut()} />;
+
+  const toggleReaction = async (caseId: string) => {
+    if (!supabase) return; const had = liked.includes(caseId);
+    setLiked((old) => had ? old.filter((id) => id !== caseId) : [...old, caseId]);
+    const { error } = had ? await supabase.from("case_reactions").delete().eq("case_id", caseId).eq("user_id", sessionUser.id) : await supabase.from("case_reactions").insert({ case_id: caseId, user_id: sessionUser.id });
+    if (error) { notify("Não foi possível registrar a reação."); setLiked((old) => had ? [...old, caseId] : old.filter((id) => id !== caseId)); } else refresh();
+  };
+  const addComment = async (body: string) => {
+    if (!supabase || !selected || !body.trim()) return;
+    const { error } = await supabase.from("case_comments").insert({ case_id: selected.id, author_id: sessionUser.id, body: body.trim() });
+    if (error) notify("Não foi possível publicar o comentário."); else { notify("Comentário publicado."); refresh(); const { data } = await supabase.from("case_comments").select("id,body,created_at,profiles!case_comments_author_id_fkey(id,full_name,initials,avatar_url)").eq("case_id", selected.id).order("created_at"); setComments((data ?? []) as unknown as typeof comments); }
+  };
+  const reportCase = async () => {
+    if (!supabase || !selected) return; const reason = window.prompt("Explique o motivo da denúncia (mínimo de 5 caracteres):")?.trim(); if (!reason || reason.length < 5) return;
+    const { error } = await supabase.from("content_reports").insert({ reporter_id: sessionUser.id, case_id: selected.id, reason }); notify(error ? "Não foi possível enviar a denúncia." : "Denúncia enviada à equipe de moderação.");
   };
 
-  const submitComment = (event: FormEvent) => {
-    event.preventDefault();
-    if (!commentText.trim()) return;
-    setCommentList((old) => [...old, { initials: "JS", name: "Dra. Juliana S.", time: "agora", text: commentText.trim() }]);
-    if (selected) {
-      setCases((old) => old.map((item) => item.id === selected.id ? { ...item, comments: item.comments + 1 } : item));
-      setSelected({ ...selected, comments: selected.comments + 1 });
-    }
-    setCommentText("");
-  };
-
-  const resolveCase = () => {
-    if (!selected) return;
-    const next = { ...selected, status: "resolvido" as CaseStatus, hasMentor: true };
-    setSelected(next);
-    setCases((old) => old.map((item) => item.id === next.id ? next : item));
-  };
-
-  return (
-    <main className="app-shell">
-      <aside className={`sidebar ${menuOpen ? "sidebar-open" : ""}`}>
-        <div className="brand"><span className="brand-mark">K</span><span className="brand-kos">KÓS</span><span className="brand-divider" /><span className="brand-coopera">COOPERA</span></div>
-        <p className="cohort-label">HANDS-ON 2025 · TURMA 03</p>
-        <nav>
-          <button className="nav-item active"><BookOpen size={18} />Casos clínicos</button>
-          <button className="nav-item" onClick={() => setMessagesOpen(true)}><MessageCircle size={18} />Mensagens<span className="nav-count">2</span></button>
-          <button className="nav-item" onClick={() => setNoticeOpen(true)}><Bell size={18} />Atualizações<span className="nav-count alert">4</span></button>
-          <button className="nav-item"><Users size={18} />Comunidade</button>
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="disclaimer-mini"><ShieldCheck size={17} /><span>Ambiente educacional<br />com dados anonimizados</span></div>
-          <button className="profile" onClick={() => previewMode ? setPreviewMode(false) : void supabase?.auth.signOut()}><span className="avatar avatar-user">{(previewMode ? "BD" : memberName.slice(0, 2)).toUpperCase()}</span><span><b>{previewMode ? "Prévia do beta" : memberName}</b><small>{previewMode ? "Dados fictícios · Sair" : `${memberRole || "participante"} · Sair`}</small></span><ChevronDown size={16} /></button>
-        </div>
-      </aside>
-
-      <section className="workspace">
-        <header className="topbar">
-          <button className="mobile-menu" onClick={() => setMenuOpen(!menuOpen)} aria-label="Abrir menu"><Menu size={22} /></button>
-          <div className="crumb"><span>Comunidade</span><b>/</b><strong>Casos clínicos</strong><small className="beta-pill">BETA · FICTÍCIO</small></div>
-          <div className="top-actions">
-            <button className="icon-button" onClick={() => setNoticeOpen(true)} aria-label="Notificações"><Bell size={19} /><i /></button>
-            <button className="new-case" onClick={() => setComposerOpen(true)}><Plus size={18} />Publicar caso</button>
-          </div>
-        </header>
-
-        <div className="content-area">
-          <section className="feed-column">
-            <div className="editorial-head">
-              <div><p className="eyebrow">BASE VIVA · BLEFAROPLASTIA</p><h1>Decisões melhores<br /><em>não acontecem sozinhas.</em></h1></div>
-              <div className="weekly-note"><Sparkles size={17} /><span><b>Ronda da semana</b><br />3 novos casos para discutir</span></div>
-            </div>
-            <div className="privacy-banner"><LockKeyhole size={18} /><span><b>Confidencialidade é coletiva.</b> Publique apenas informações e arquivos anonimizados, com base legal para compartilhamento.</span><button aria-label="Saiba mais"><CircleHelp size={18} /></button></div>
-            <div className="discovery-row">
-              <label className="search-box"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar técnica, tema ou colega" /></label>
-              <button className="filter-button"><SlidersHorizontal size={17} />Filtros</button>
-            </div>
-            <div className="filter-tabs">{filters.map((filter) => <button key={filter.value} className={status === filter.value ? "selected" : ""} onClick={() => setStatus(filter.value)}>{filter.label}</button>)}</div>
-            <div className="case-list">
-              {visibleCases.map((item, index) => <article className={`case-card ${selected?.id === item.id ? "case-selected" : ""}`} key={item.id} onClick={() => { setSelected(item); setMobileDetailOpen(true); }} style={{ animationDelay: `${index * 70}ms` }}>
-                <div className="case-topline"><span className="case-code">{item.code}</span><span className={`status-dot ${item.status === "resolvido" ? "done" : ""}`}>{item.status === "resolvido" ? <Check size={13} /> : <span />} {item.status}</span><button className="more" onClick={(event) => event.stopPropagation()} aria-label="Mais opções"><MoreHorizontal size={19} /></button></div>
-                <div className="case-body"><span className={`avatar ${item.role === "mentor" ? "avatar-mentor" : ""}`}>{item.initials}</span><div><p className="byline">{item.author}<span>·</span>{item.createdAt}</p><h2>{item.title}</h2><p className="case-excerpt">{item.excerpt}</p></div></div>
-                <div className="case-question"><span>PERGUNTA À COMUNIDADE</span><p>{item.question}</p></div>
-                <div className="case-foot"><div className="tags">{item.tags.map((tag) => <span key={tag}>{tag}</span>)}</div><div className="case-metrics"><span><MediaGlyph type={item.media} /></span><button onClick={(event) => { event.stopPropagation(); setSelected(item); }}><MessageCircle size={16} />{item.comments}</button><button className={liked.includes(item.id) ? "hearted" : ""} onClick={(event) => { event.stopPropagation(); addReaction(item.id); }}><Heart size={16} fill={liked.includes(item.id) ? "currentColor" : "none"} />{item.reactions}</button></div></div>
-              </article>)}
-              {!visibleCases.length && <div className="empty-state"><Search size={28} /><h2>Nenhum caso encontrado</h2><p>Tente buscar por outra técnica, pessoa ou filtro.</p></div>}
-            </div>
-          </section>
-
-          <aside className="detail-column">
-            {selected ? <CaseDetail selected={selected} comments={commentList} commentText={commentText} setCommentText={setCommentText} submitComment={submitComment} liked={liked.includes(selected.id)} onLike={() => addReaction(selected.id)} onResolve={resolveCase} canResolve={memberRole === "mentor" || memberRole === "admin"} /> : <div className="detail-empty">Selecione um caso para entrar na discussão.</div>}
-          </aside>
-        </div>
-        <nav className="mobile-bottom-nav" aria-label="Navegação principal">
-          <button className="active"><HomeIcon size={19} /><span>Casos</span></button>
-          <button onClick={() => setMessagesOpen(true)}><MessageCircle size={19} /><span>Mensagens</span></button>
-          <button onClick={() => setComposerOpen(true)} className="mobile-create" aria-label="Publicar caso"><Plus size={21} /></button>
-          <button onClick={() => setNoticeOpen(true)}><Bell size={19} /><span>Alertas</span></button>
-          <button><UserRound size={19} /><span>Perfil</span></button>
-        </nav>
-      </section>
-
-      <div className={`mobile-case-sheet ${mobileDetailOpen ? "open" : ""}`}>
-        <div className="mobile-sheet-header"><span>DISCUSSÃO CLÍNICA</span><button onClick={() => setMobileDetailOpen(false)} aria-label="Fechar caso"><X size={21} /></button></div>
-        {selected && <CaseDetail selected={selected} comments={commentList} commentText={commentText} setCommentText={setCommentText} submitComment={submitComment} liked={liked.includes(selected.id)} onLike={() => addReaction(selected.id)} onResolve={resolveCase} canResolve={memberRole === "mentor" || memberRole === "admin"} />}
-      </div>
-
-      {composerOpen && <CaseComposer onClose={() => setComposerOpen(false)} onPublish={(draft) => { const created: CommunityCase = { ...draft, id: Date.now(), code: `CASO ${String(cases.length + 15).padStart(3, "0")}`, author: "Dra. Juliana S.", initials: "JS", role: "aluno", createdAt: "agora", status: "em discussão", comments: 0, reactions: 0, media: "none", hasMentor: false }; setCases((old) => [created, ...old]); setSelected(created); setComposerOpen(false); }} />}
-      {noticeOpen && <NotificationPanel onClose={() => setNoticeOpen(false)} />}
-      {messagesOpen && <MessagesPanel onClose={() => setMessagesOpen(false)} />}
-    </main>
-  );
-}
-
-function LoginScreen() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [pending, setPending] = useState(false);
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!supabase) return;
-    setError(""); setNotice(""); setPending(true);
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    setPending(false);
-    if (signInError) setError("Não foi possível entrar. Verifique seu e-mail e senha.");
-  };
-  const resetPassword = async () => {
-    if (!supabase || !email.trim()) { setError("Informe seu e-mail profissional para receber o link."); return; }
-    setError(""); setNotice(""); setPending(true);
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/?set-password=1` });
-    setPending(false);
-    if (resetError) setError("Não foi possível enviar o link agora. Tente novamente mais tarde.");
-    else setNotice("Se este e-mail tiver acesso, você receberá um link seguro para definir uma nova senha.");
-  };
-  return <main className="auth-shell">
-    <div className="auth-ornament auth-ornament-one" /><div className="auth-ornament auth-ornament-two" />
-    <section className="auth-panel">
-      <div className="auth-brand"><span className="brand-mark">K</span><div><b>KÓS</b><span>COOPERA</span></div></div>
-      <div className="auth-intro"><p className="eyebrow">COMUNIDADE CLÍNICA</p><h1>O conhecimento<br /><em>continua aqui.</em></h1><p>Um ambiente reservado para a turma discutir casos, técnicas e decisões em blefaroplastia.</p></div>
-      <form className="login-form" onSubmit={submit}>
-        <label>E-mail profissional<div><Mail size={17} /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" /></div></label>
-        <label>Senha<div><KeyRound size={17} /><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" /></div></label>
-        {error && <p className="login-error">{error}</p>}
-        {notice && <p className="login-notice">{notice}</p>}
-        <button type="submit" disabled={pending}>{pending ? "Verificando acesso…" : <>Entrar na comunidade <ArrowRight size={18} /></>}</button>
-      </form>
-      <button className="auth-link" type="button" onClick={() => void resetPassword()} disabled={pending}>Esqueci minha senha</button>
-      <p className="auth-disclaimer"><LockKeyhole size={14} />Beta privado com dados fictícios. Ambiente educacional.</p>
-    </section>
+  return <main className="app-shell">
+    {toast && <div className="toast" role="status">{toast}</div>}
+    <aside className={`sidebar ${menuOpen ? "sidebar-open" : ""}`}>
+      <div className="brand"><span className="brand-mark">K</span><span className="brand-kos">KÓS</span><span className="brand-divider" /><span className="brand-coopera">COOPERA</span></div>
+      <p className="cohort-label">{membership.cohorts?.name?.toUpperCase() ?? "TURMA ATIVA"}</p>
+      <nav><button className="nav-item active"><BookOpen size={18} />Casos clínicos</button><button className="nav-item" onClick={() => setMessageOpen(true)}><MessageCircle size={18} />Mensagens</button><button className="nav-item" onClick={() => setNoticeOpen(true)}><Bell size={18} />Atualizações</button>{membership.role === "admin" && <button className="nav-item" onClick={() => setAdminOpen(true)}><Users size={18} />Administração</button>}</nav>
+      <div className="sidebar-bottom"><div className="disclaimer-mini"><ShieldCheck size={17} /><span>Ambiente educacional<br />dados anonimizados obrigatórios</span></div><button className="profile" onClick={() => void supabase?.auth.signOut()}><span className="avatar avatar-user">{profile.initials}</span><span><b>{profile.full_name}</b><small>{membership.role} · Sair</small></span><ChevronDown size={16} /></button></div>
+    </aside>
+    <section className="workspace"><header className="topbar"><button className="mobile-menu" onClick={() => setMenuOpen(!menuOpen)} aria-label="Abrir menu"><Menu size={22} /></button><div className="crumb"><span>Comunidade</span><b>/</b><strong>Casos clínicos</strong></div><div className="top-actions"><button className="icon-button" onClick={() => setNoticeOpen(true)} aria-label="Notificações"><Bell size={19} /></button><button className="new-case" onClick={() => setComposerOpen(true)}><Plus size={18} />Publicar caso</button></div></header>
+      <div className="content-area"><section className="feed-column"><div className="editorial-head"><div><p className="eyebrow">BASE VIVA · BLEFAROPLASTIA</p><h1>Decisões melhores<br /><em>não acontecem sozinhas.</em></h1></div><div className="weekly-note"><Sparkles size={17} /><span><b>{cases.filter((item) => item.status === "em_discussao").length} casos abertos</b><br />na sua turma</span></div></div><div className="privacy-banner"><LockKeyhole size={18} /><span><b>Confidencialidade é coletiva.</b> Use apenas dados anonimizados e com base legal. <a href="/termos">Termos e privacidade</a></span></div><div className="discovery-row"><label className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar técnica, tema ou colega" /></label></div><div className="filter-tabs">{(["todos", "em_discussao", "resolvido"] as const).map((value) => <button key={value} className={status === value ? "selected" : ""} onClick={() => setStatus(value)}>{value === "todos" ? "Todos" : caseStatus[value]}</button>)}</div><div className="case-list">{visibleCases.map((item) => <CaseCard key={item.id} item={item} liked={liked.includes(item.id)} onSelect={() => setSelected(item)} onLike={() => void toggleReaction(item.id)} />)}{!visibleCases.length && <EmptyCases />}</div></section><aside className="detail-column">{selected ? <CaseDetail selected={selected} comments={comments} role={membership.role} currentUser={sessionUser.id} liked={liked.includes(selected.id)} onLike={() => void toggleReaction(selected.id)} onComment={addComment} onReport={reportCase} onRefresh={refresh} /> : <EmptyCases />}</aside></div>
+      <nav className="mobile-bottom-nav" aria-label="Navegação principal"><button className="active"><Home size={19} /><span>Casos</span></button><button onClick={() => setMessageOpen(true)}><MessageCircle size={19} /><span>Mensagens</span></button><button onClick={() => setComposerOpen(true)} className="mobile-create" aria-label="Publicar caso"><Plus size={21} /></button><button onClick={() => setNoticeOpen(true)}><Bell size={19} /><span>Alertas</span></button><button onClick={() => membership.role === "admin" && setAdminOpen(true)}><Users size={19} /><span>Admin</span></button></nav></section>
+    {composerOpen && <CaseComposer cohortId={membership.cohort_id} userId={sessionUser.id} onClose={() => setComposerOpen(false)} onDone={() => { setComposerOpen(false); refresh(); notify("Caso publicado com sucesso."); }} />}
+    {noticeOpen && <Notifications onClose={() => setNoticeOpen(false)} />}
+    {messageOpen && <Messages cohortId={membership.cohort_id} userId={sessionUser.id} onClose={() => setMessageOpen(false)} />}
+    {adminOpen && <AdminPanel cohortId={membership.cohort_id} onClose={() => setAdminOpen(false)} />}
   </main>;
 }
 
-function SetPasswordScreen({ onComplete }: { onComplete: () => void }) {
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [error, setError] = useState("");
-  const [pending, setPending] = useState(false);
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!supabase || password.length < 10) { setError("Use uma senha com pelo menos 10 caracteres."); return; }
-    if (password !== confirm) { setError("As senhas não coincidem."); return; }
-    setPending(true); setError("");
-    const { error: updateError } = await supabase.auth.updateUser({ password });
-    setPending(false);
-    if (updateError) setError("O link expirou ou não é válido. Solicite uma nova senha.");
-    else { window.history.replaceState({}, "", "/"); onComplete(); }
-  };
-  return <main className="auth-shell"><section className="auth-panel"><div className="auth-brand"><span className="brand-mark">K</span><div><b>KÓS</b><span>COOPERA</span></div></div><div className="auth-intro"><p className="eyebrow">ACESSO SEGURO</p><h1>Defina sua<br /><em>senha.</em></h1></div><form className="login-form" onSubmit={submit}><label>Nova senha<div><KeyRound size={17} /><input type="password" value={password} minLength={10} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" /></div></label><label>Repita a senha<div><KeyRound size={17} /><input type="password" value={confirm} minLength={10} onChange={(event) => setConfirm(event.target.value)} autoComplete="new-password" /></div></label>{error && <p className="login-error">{error}</p>}<button type="submit" disabled={pending}>{pending ? "Salvando…" : "Concluir acesso"}</button></form></section></main>;
-}
+function CaseCard({ item, liked, onSelect, onLike }: { item: CaseRecord; liked: boolean; onSelect: () => void; onLike: () => void }) { const comments = item.case_comments?.[0]?.count ?? 0; const reactions = item.case_reactions?.[0]?.count ?? 0; return <article className="case-card" onClick={onSelect}><div className="case-topline"><span className="case-code">{item.code}</span><span className={`status-dot ${item.status === "resolvido" ? "done" : ""}`}>{item.status === "resolvido" ? <Check size={13} /> : <span />}{caseStatus[item.status]}</span><MoreHorizontal className="more" size={19} /></div><div className="case-body"><span className="avatar">{item.profiles?.initials ?? initials(item.profiles?.full_name)}</span><div><p className="byline">{item.profiles?.full_name ?? "Participante"}<span>·</span>{nowText(item.created_at)}</p><h2>{item.title}</h2><p className="case-excerpt">{item.clinical_context || item.body || item.assessment || "Caso compartilhado com a comunidade."}</p></div></div><div className="case-question"><span>PERGUNTA À COMUNIDADE</span><p>{item.community_question}</p></div><div className="case-foot"><div className="tags">{item.tags.map((tag) => <span key={tag}>{tag}</span>)}</div><div className="case-metrics"><button onClick={(event) => { event.stopPropagation(); onSelect(); }}><MessageCircle size={16} />{comments}</button><button className={liked ? "hearted" : ""} onClick={(event) => { event.stopPropagation(); onLike(); }}><Heart size={16} fill={liked ? "currentColor" : "none"} />{reactions}</button></div></div></article>; }
 
-function ConfigurationScreen({ onPreview }: { onPreview: () => void }) {
-  return <main className="auth-shell"><section className="auth-panel"><div className="auth-brand"><span className="brand-mark">K</span><div><b>KÓS</b><span>COOPERA</span></div></div><div className="auth-intro"><p className="eyebrow">BETA PRIVADO</p><h1>A comunidade está<br /><em>sendo preparada.</em></h1><p>O acesso por convite está sendo conectado. Enquanto isso, você pode conhecer a experiência mobile com conteúdo inteiramente fictício.</p></div><button className="preview-button" type="button" onClick={onPreview}>Explorar prévia do beta <ArrowRight size={18} /></button><p className="auth-disclaimer"><ShieldCheck size={14} />Sem dados clínicos reais nesta fase.</p></section></main>;
-}
+function CaseDetail({ selected, comments, role, currentUser, liked, onLike, onComment, onReport, onRefresh }: { selected: CaseRecord; comments: Array<{ id: string; body: string; created_at: string; profiles: Profile | null }>; role: Role; currentUser: string; liked: boolean; onLike: () => void; onComment: (body: string) => void; onReport: () => void; onRefresh: () => void }) { const [text, setText] = useState(""); const [summary, setSummary] = useState(""); const mentor = selected.mentor_summaries?.[0]; const createSummary = async () => { if (!supabase || !summary.trim()) return; const { error } = await supabase.from("mentor_summaries").insert({ case_id: selected.id, mentor_id: currentUser, body: summary.trim() }); if (!error) { setSummary(""); onRefresh(); } }; const openAttachment = async (path: string) => { const { data, error } = await supabase?.storage.from("case-media").createSignedUrl(path, 60) ?? {}; if (!error && data?.signedUrl) window.open(data.signedUrl, "_blank", "noopener,noreferrer"); }; return <div className="detail-panel"><div className="detail-label"><span>{selected.code}</span><button onClick={onReport} aria-label="Denunciar conteúdo"><MoreHorizontal size={19} /></button></div><h2>{selected.title}</h2><div className="detail-author"><span className="avatar">{selected.profiles?.initials ?? initials(selected.profiles?.full_name)}</span><span><b>{selected.profiles?.full_name ?? "Participante"}</b><small>{nowText(selected.created_at)} · {caseModes.find((mode) => mode.value === selected.mode)?.label}</small></span></div><div className="detail-question"><p>O que está em discussão</p><strong>{selected.community_question}</strong></div>{selected.case_attachments?.length > 0 && <div className="attachment-list">{selected.case_attachments.map((attachment) => <button key={attachment.id} onClick={() => void openAttachment(attachment.storage_path)}><Paperclip size={14} />{attachment.filename}</button>)}</div>}{mentor && <div className="mentor-summary"><div><span className="avatar avatar-mentor">{mentor.profiles?.initials ?? "MK"}</span><p><b>Síntese do mentor</b><small>{mentor.profiles?.full_name ?? "Mentor"} · {nowText(mentor.created_at)}</small></p><Check size={17} /></div><p>{mentor.body}</p></div>}{!mentor && (role === "mentor" || role === "admin") && <div className="mentor-compose"><textarea value={summary} onChange={(event) => setSummary(event.target.value)} placeholder="Síntese clínica do mentor…" /><button className="mentor-action" onClick={() => void createSummary()} disabled={!summary.trim()}><Sparkles size={16} />Publicar síntese</button></div>}<div className="detail-actions"><button><MessageCircle size={17} />{comments.length} contribuições</button><button className={liked ? "hearted" : ""} onClick={onLike}><Heart size={17} fill={liked ? "currentColor" : "none"} />Reagir</button></div><div className="comments-head"><h3>Discussão</h3><span>cronológica</span></div><div className="comment-stack">{comments.map((comment) => <div className="comment" key={comment.id}><span className="avatar avatar-comment">{comment.profiles?.initials ?? initials(comment.profiles?.full_name)}</span><div><p><b>{comment.profiles?.full_name ?? "Participante"}</b><small>{nowText(comment.created_at)}</small></p><span>{comment.body}</span></div></div>)}</div><form className="comment-form" onSubmit={(event) => { event.preventDefault(); onComment(text); setText(""); }}><span className="avatar avatar-user">{initials("Você")}</span><input value={text} onChange={(event) => setText(event.target.value)} placeholder="Contribua com a discussão…" /><button disabled={!text.trim()} aria-label="Enviar comentário"><Send size={17} /></button></form></div>; }
 
-function LoadingScreen() {
-  return <main className="auth-shell"><section className="auth-panel"><div className="auth-brand"><span className="brand-mark">K</span><div><b>KÓS</b><span>COOPERA</span></div></div><p className="auth-disclaimer">Verificando acesso seguro…</p></section></main>;
-}
+function CaseComposer({ cohortId, userId, onClose, onDone }: { cohortId: string; userId: string; onClose: () => void; onDone: () => void }) { const [mode, setMode] = useState<CaseMode>("roteiro_clinico"); const [title, setTitle] = useState(""); const [question, setQuestion] = useState(""); const [context, setContext] = useState(""); const [assessment, setAssessment] = useState(""); const [body, setBody] = useState(""); const [tags, setTags] = useState(""); const [files, setFiles] = useState<FileList | null>(null); const [agreed, setAgreed] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const submit = async (event: FormEvent) => { event.preventDefault(); if (!supabase || !agreed) return; setBusy(true); setError(""); const code = `CASO-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`; const { data: created, error: createError } = await supabase.from("clinical_cases").insert({ cohort_id: cohortId, author_id: userId, code, title, mode, clinical_context: context || null, assessment: assessment || null, body: body || null, community_question: question, tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean).slice(0, 8), privacy_acknowledged_at: new Date().toISOString(), privacy_acknowledgement_version: "provisional-2026-09" }).select("id").single(); if (createError || !created) { setError(createError?.message || "Não foi possível publicar o caso."); setBusy(false); return; } for (const file of Array.from(files ?? [])) { const allowed = ["image/jpeg", "image/png", "image/webp", "application/pdf", "video/mp4"]; if (!allowed.includes(file.type) || file.size > 50 * 1024 * 1024) { setError("Anexo inválido: somente imagem, PDF ou vídeo MP4 de até 50 MB."); continue; } const path = `${cohortId}/${created.id}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`; const { error: uploadError } = await supabase.storage.from("case-media").upload(path, file, { contentType: file.type }); if (!uploadError) await supabase.from("case_attachments").insert({ case_id: created.id, uploader_id: userId, storage_path: path, filename: file.name, kind: file.type === "application/pdf" ? "pdf" : file.type === "video/mp4" ? "video" : "imagem", mime_type: file.type, byte_size: file.size }); } setBusy(false); onDone(); }; return <div className="modal-backdrop"><form className="composer" onSubmit={(event) => void submit(event)}><div className="modal-head"><div><p className="eyebrow">NOVO CASO</p><h2>Convide a turma<br /><em>para raciocinar junto.</em></h2></div><button type="button" onClick={onClose} aria-label="Fechar"><X size={22} /></button></div><div className="mode-select">{caseModes.map((item) => <button type="button" key={item.value} className={mode === item.value ? "active" : ""} onClick={() => setMode(item.value)}>{item.label}</button>)}</div><label>Título do caso<input value={title} required minLength={5} maxLength={160} onChange={(event) => setTitle(event.target.value)} /></label>{mode === "roteiro_clinico" && <div className="clinical-grid"><label>Contexto clínico<textarea value={context} onChange={(event) => setContext(event.target.value)} /></label><label>Avaliação e hipótese<textarea value={assessment} onChange={(event) => setAssessment(event.target.value)} /></label></div>}{mode === "texto_livre" && <label>Descrição<textarea value={body} required onChange={(event) => setBody(event.target.value)} /></label>}<label>Pergunta para a comunidade<textarea value={question} required minLength={10} onChange={(event) => setQuestion(event.target.value)} /></label><label>Tags, separadas por vírgula<input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="Técnica, pálpebra superior" /></label><label className="attachment"><Paperclip size={17} />Adicionar imagens, PDF ou vídeo <input type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf,video/mp4" onChange={(event) => setFiles(event.target.files)} /></label><label className="privacy-check"><input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} /><span>Confirmo a anonimização e a base legal do compartilhamento educacional. A decisão e a responsabilidade clínica continuam sendo do médico assistente.</span></label>{error && <p className="login-error">{error}</p>}<div className="composer-foot"><p><ShieldCheck size={16} />Visível apenas à turma ativa</p><button className="publish" disabled={!agreed || busy}>{busy ? "Publicando…" : "Publicar caso"} <Send size={16} /></button></div></form></div>; }
 
-function CaseDetail({ selected, comments, commentText, setCommentText, submitComment, liked, onLike, onResolve, canResolve }: { selected: CommunityCase; comments: typeof initialComments; commentText: string; setCommentText: (value: string) => void; submitComment: (event: FormEvent) => void; liked: boolean; onLike: () => void; onResolve: () => void; canResolve: boolean }) {
-  return <div className="detail-panel">
-    <div className="detail-label"><span>{selected.code}</span><button aria-label="Mais opções"><MoreHorizontal size={19} /></button></div>
-    <h2>{selected.title}</h2>
-    <div className="detail-author"><span className={`avatar ${selected.role === "mentor" ? "avatar-mentor" : ""}`}>{selected.initials}</span><span><b>{selected.author}</b><small>{selected.createdAt} · {selected.mode}</small></span></div>
-    <div className="detail-question"><p>O que está em discussão</p><strong>{selected.question}</strong></div>
-    {selected.hasMentor && <div className="mentor-summary"><div><span className="avatar avatar-mentor">HA</span><p><b>Síntese do mentor</b><small>Dra. Helena A. · hoje</small></p><Check size={17} /></div><p>A conduta deve considerar a assimetria estática antes de qualquer ampliação do fuso. Priorize uma retirada conservadora e documente o teste de pinçamento bilateral.</p></div>}
-    {!selected.hasMentor && canResolve && <button className="mentor-action" onClick={onResolve}><Sparkles size={16} />Publicar síntese de mentor</button>}
-    {!selected.hasMentor && !canResolve && <p className="mentor-waiting"><Sparkles size={15} />Aguardando a síntese de um mentor.</p>}
-    <div className="detail-actions"><button><MessageCircle size={17} />{selected.comments} contribuições</button><button className={liked ? "hearted" : ""} onClick={onLike}><Heart size={17} fill={liked ? "currentColor" : "none"} />{selected.reactions}</button></div>
-    <div className="comments-head"><h3>Discussão</h3><span>mais recentes</span></div>
-    <div className="comment-stack">{comments.map((comment, index) => <div className="comment" key={`${comment.name}-${index}`}><span className="avatar avatar-comment">{comment.initials}</span><div><p><b>{comment.name}</b><small>{comment.time}</small></p><span>{comment.text}</span><button>Responder</button></div></div>)}</div>
-    <form className="comment-form" onSubmit={submitComment}><span className="avatar avatar-user">JS</span><input value={commentText} onChange={(event) => setCommentText(event.target.value)} placeholder="Contribua com a discussão…" /><button aria-label="Enviar comentário"><Send size={17} /></button></form>
-  </div>;
-}
+function Notifications({ onClose }: { onClose: () => void }) { const [items, setItems] = useState<Array<{ id: string; title: string; body: string | null; created_at: string; read_at: string | null }>>([]); useEffect(() => { if (!supabase) return; void supabase.from("notifications").select("id,title,body,created_at,read_at").order("created_at", { ascending: false }).limit(20).then(({ data }) => setItems(data ?? [])); }, []); return <div className="floating-panel notifications"><div><h3>Atualizações</h3><button onClick={onClose}><X size={18} /></button></div>{items.length ? items.map((item) => <button key={item.id} className={`notification-item ${!item.read_at ? "unread" : ""}`} onClick={() => void supabase?.from("notifications").update({ read_at: new Date().toISOString() }).eq("id", item.id)}><span className="notice-icon"><Bell size={14} /></span><p><b>{item.title}</b><small>{item.body} · {nowText(item.created_at)}</small></p></button>) : <p className="empty-copy">Nenhuma atualização por enquanto.</p>}</div>; }
 
-function CaseComposer({ onClose, onPublish }: { onClose: () => void; onPublish: (draft: Omit<CommunityCase, "id" | "code" | "author" | "initials" | "role" | "createdAt" | "status" | "comments" | "reactions" | "media" | "hasMentor">) => void }) {
-  const [mode, setMode] = useState<CaseMode>("roteiro clínico");
-  const [agreed, setAgreed] = useState(false);
-  const [title, setTitle] = useState("");
-  const [question, setQuestion] = useState("");
-  const submit = (event: FormEvent) => { event.preventDefault(); if (!agreed || !title || !question) return; onPublish({ title, question, excerpt: "Novo caso publicado para troca de experiência com a comunidade.", mode, tags: ["Blefaroplastia", "Novo caso"] }); };
-  return <div className="modal-backdrop"><form className="composer" onSubmit={submit}><div className="modal-head"><div><p className="eyebrow">NOVO CASO</p><h2>Convide a turma<br /><em>para raciocinar junto.</em></h2></div><button type="button" onClick={onClose} aria-label="Fechar"><X size={22} /></button></div><div className="mode-select">{(["roteiro clínico", "texto livre", "modelo"] as CaseMode[]).map((value) => <button type="button" key={value} className={mode === value ? "active" : ""} onClick={() => setMode(value)}>{value}</button>)}</div><label>Título do caso<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ex.: Assimetria prévia em pálpebra superior" /></label>{mode === "roteiro clínico" && <div className="clinical-grid"><label>Contexto clínico<textarea placeholder="Apresente o cenário de forma anonimizável…" /></label><label>Avaliação e hipótese<textarea placeholder="Quais são os achados relevantes?" /></label></div>}{mode === "modelo" && <label>Modelo de caso<select><option>Planejamento pré-operatório</option><option>Complicação / intercorrência</option><option>Acompanhamento pós-operatório</option></select></label>}<label>Pergunta para a comunidade<textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Que decisão, técnica ou conduta você quer discutir?" /></label><button type="button" className="attachment"><Paperclip size={17} />Adicionar imagens, PDF ou vídeo <small>privado</small></button><label className="privacy-check"><input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} /><span>Confirmo que o caso e os anexos foram anonimizados e que tenho base legal para este compartilhamento educacional.</span></label><div className="composer-foot"><p><ShieldCheck size={16} />Visível somente à Turma 03</p><button className="publish" disabled={!agreed || !title || !question}>Publicar caso <Send size={16} /></button></div></form></div>;
-}
+function Messages({ cohortId, userId, onClose }: { cohortId: string; userId: string; onClose: () => void }) { const [people, setPeople] = useState<Profile[]>([]); const [contact, setContact] = useState<Profile | null>(null); const [conversation, setConversation] = useState<string | null>(null); const [messages, setMessages] = useState<Array<{ id: string; sender_id: string; body: string; created_at: string }>>([]); const [text, setText] = useState(""); useEffect(() => { if (!supabase) return; void supabase.from("memberships").select("user_id,profiles(id,full_name,initials,avatar_url)").eq("cohort_id", cohortId).eq("active", true).neq("user_id", userId).then(({ data }) => setPeople((data ?? []).map((row) => row.profiles as unknown as Profile).filter(Boolean))); }, [cohortId, userId]); const open = async (person: Profile) => { if (!supabase) return; const { data, error } = await supabase.rpc("open_direct_conversation", { target_user: person.id }); if (error) return; setContact(person); setConversation(data); const { data: thread } = await supabase.from("direct_messages").select("id,sender_id,body,created_at").eq("conversation_id", data).order("created_at"); setMessages(thread ?? []); }; const send = async (event: FormEvent) => { event.preventDefault(); if (!supabase || !conversation || !text.trim()) return; const { error } = await supabase.from("direct_messages").insert({ conversation_id: conversation, sender_id: userId, body: text.trim() }); if (!error) { setText(""); const { data } = await supabase.from("direct_messages").select("id,sender_id,body,created_at").eq("conversation_id", conversation).order("created_at"); setMessages(data ?? []); } }; return <div className="modal-backdrop message-backdrop"><div className="messages-modal"><div className="modal-head"><div><p className="eyebrow">CONVERSAS PRIVADAS</p><h2>{contact ? contact.full_name : "Entre colegas."}</h2></div><button onClick={onClose}><X size={22} /></button></div>{!contact ? <div className="people-list">{people.map((person) => <button className="message-contact" key={person.id} onClick={() => void open(person)}><span className="avatar">{person.initials}</span><p><b>{person.full_name}</b><small>Iniciar conversa privada</small></p></button>)}</div> : <><button className="back-link" onClick={() => { setContact(null); setConversation(null); }}>← Contatos</button><div className="message-thread">{messages.map((message) => <div key={message.id} className={`message-bubble ${message.sender_id === userId ? "mine" : ""}`}>{message.body}</div>)}</div><form className="dm-form" onSubmit={(event) => void send(event)}><input value={text} onChange={(event) => setText(event.target.value)} placeholder="Escreva uma mensagem privada" /><button disabled={!text.trim()}><Send size={17} /></button></form></>}</div></div>; }
 
-function NotificationPanel({ onClose }: { onClose: () => void }) { return <div className="floating-panel notifications"><div><h3>Atualizações</h3><button onClick={onClose}><X size={18} /></button></div><button className="notification-item unread"><span className="avatar avatar-mentor">HA</span><p><b>Dra. Helena comentou no seu caso</b><small>“Confira a relação com a sobrancelha…” · agora</small></p></button><button className="notification-item"><span className="avatar avatar-comment">MA</span><p><b>Você foi mencionada em Caso 014</b><small>há 26 min</small></p></button><button className="notification-item"><span className="notice-icon"><Check size={15} /></span><p><b>Caso 009 recebeu síntese de mentor</b><small>ontem</small></p></button></div>; }
+function AdminPanel({ cohortId, onClose }: { cohortId: string; onClose: () => void }) { const [members, setMembers] = useState<Array<{ user_id: string; role: Role; active: boolean; profiles: Profile | null }>>([]); const [email, setEmail] = useState(""); const [fullName, setFullName] = useState(""); const [role, setRole] = useState<Role>("aluno"); const [message, setMessage] = useState(""); const token = async () => (await supabase?.auth.getSession())?.data.session?.access_token; const load = useCallback(async () => { if (!supabase) return; const { data } = await supabase.from("memberships").select("user_id,role,active,profiles(id,full_name,initials,avatar_url)").eq("cohort_id", cohortId).order("created_at"); setMembers((data ?? []) as unknown as typeof members); }, [cohortId]); useEffect(() => { void load(); }, [load]); const invite = async (event: FormEvent) => { event.preventDefault(); const accessToken = await token(); const response = await fetch("/api/admin/invite", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ email, fullName, cohortId, role }) }); setMessage(response.ok ? "Convite enviado." : (await response.json()).error || "Falha ao enviar convite."); if (response.ok) { setEmail(""); setFullName(""); void load(); } }; const update = async (userId: string, update: Partial<{ role: Role; active: boolean }>) => { const accessToken = await token(); await fetch("/api/admin/membership", { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ cohortId, userId, ...update }) }); void load(); }; return <div className="modal-backdrop"><div className="composer admin-panel"><div className="modal-head"><div><p className="eyebrow">OPERAÇÃO DA TURMA</p><h2>Administração</h2></div><button onClick={onClose}><X size={22} /></button></div><form className="admin-invite" onSubmit={(event) => void invite(event)}><input required type="email" placeholder="E-mail profissional" value={email} onChange={(event) => setEmail(event.target.value)} /><input required placeholder="Nome completo" value={fullName} onChange={(event) => setFullName(event.target.value)} /><select value={role} onChange={(event) => setRole(event.target.value as Role)}><option value="aluno">Aluno</option><option value="mentor">Mentor</option><option value="admin">Administrador</option></select><button className="publish">Convidar</button></form>{message && <p className="login-notice">{message}</p>}<div className="member-list">{members.map((member) => <div key={member.user_id} className="member-row"><span className="avatar">{member.profiles?.initials ?? "CK"}</span><span><b>{member.profiles?.full_name ?? "Participante"}</b><small>{member.active ? "ativo" : "desativado"}</small></span><select value={member.role} onChange={(event) => void update(member.user_id, { role: event.target.value as Role })}><option value="aluno">Aluno</option><option value="mentor">Mentor</option><option value="admin">Admin</option></select><button className="link-button" onClick={() => void update(member.user_id, { active: !member.active })}>{member.active ? "Desativar" : "Reativar"}</button></div>)}</div></div></div>; }
 
-function MessagesPanel({ onClose }: { onClose: () => void }) { return <div className="modal-backdrop message-backdrop"><div className="messages-modal"><div className="modal-head"><div><p className="eyebrow">CONVERSAS PRIVADAS</p><h2>Entre colegas.</h2></div><button onClick={onClose}><X size={22} /></button></div><div className="message-contact"><span className="avatar avatar-mentor">HA</span><p><b>Dra. Helena A.</b><small>Mentora · online agora</small></p></div><div className="message-bubble">Oi, Juliana. Vi sua pergunta no Caso 014 — posso explicar meu raciocínio depois da discussão coletiva.</div><div className="message-bubble mine">Obrigada, Dra. Helena. Vou complementar a documentação antes.</div><form className="dm-form" onSubmit={(event) => event.preventDefault()}><input placeholder="Escreva uma mensagem privada" /><button><Send size={17} /></button></form></div></div>; }
+function LoginScreen() { const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [pending, setPending] = useState(false); const submit = async (event: FormEvent) => { event.preventDefault(); if (!supabase) return; setPending(true); const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password }); setPending(false); setError(authError ? "Não foi possível entrar. Verifique seu e-mail e senha." : ""); }; const reset = async () => { if (!supabase || !email) { setError("Informe seu e-mail profissional."); return; } await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/?set-password=1` }); setError("Se o e-mail estiver cadastrado, enviaremos um link seguro."); }; return <main className="auth-shell"><section className="auth-panel"><div className="auth-brand"><span className="brand-mark">K</span><div><b>KÓS</b><span>COOPERA</span></div></div><div className="auth-intro"><p className="eyebrow">COMUNIDADE CLÍNICA</p><h1>O conhecimento<br /><em>continua aqui.</em></h1><p>Acesso exclusivo por convite.</p></div><form className="login-form" onSubmit={(event) => void submit(event)}><label>E-mail profissional<div><Mail size={17} /><input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></div></label><label>Senha<div><KeyRound size={17} /><input required type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></div></label>{error && <p className="login-error">{error}</p>}<button disabled={pending}>{pending ? "Verificando…" : "Entrar na comunidade"}</button></form><button className="auth-link" onClick={() => void reset()}>Esqueci minha senha</button><p className="auth-disclaimer"><LockKeyhole size={14} />Ambiente educacional. Dados anonimizados obrigatórios.</p><p className="auth-disclaimer"><a href="/termos">Termos e Política de Privacidade</a></p></section></main>; }
+
+function ConfigurationScreen() { return <main className="auth-shell"><section className="auth-panel"><div className="auth-brand"><span className="brand-mark">K</span><div><b>KÓS</b><span>COOPERA</span></div></div><div className="auth-intro"><p className="eyebrow">CONFIGURAÇÃO NECESSÁRIA</p><h1>Ambiente ainda<br /><em>não conectado.</em></h1><p>O serviço de autenticação ainda não foi configurado neste deploy.</p></div></section></main>; }
+function LoadingScreen() { return <main className="auth-shell"><section className="auth-panel"><p className="auth-disclaimer">Verificando acesso seguro…</p></section></main>; }
+function AccessPending({ onSignOut }: { onSignOut: () => void }) { return <main className="auth-shell"><section className="auth-panel"><div className="auth-intro"><p className="eyebrow">ACESSO PENDENTE</p><h1>Sua conta ainda<br /><em>não está em uma turma.</em></h1><p>Peça à equipe Kós para concluir seu convite.</p></div><button className="preview-button" onClick={onSignOut}>Sair</button></section></main>; }
+function LegalGate({ documents, userId, onAccepted, onSignOut }: { documents: Array<{ slug: string; version: string; title: string }>; userId: string; onAccepted: () => void; onSignOut: () => void }) { const [checked, setChecked] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const accept = async () => { if (!supabase || !checked || !documents.length) return; setBusy(true); const { error: insertError } = await supabase.from("legal_acceptances").insert(documents.map((document) => ({ user_id: userId, document_slug: document.slug, document_version: document.version }))); setBusy(false); if (insertError) setError("Não foi possível registrar seu aceite. Tente novamente."); else onAccepted(); }; return <main className="auth-shell"><section className="auth-panel"><div className="auth-brand"><span className="brand-mark">K</span><div><b>KÓS</b><span>COOPERA</span></div></div><div className="auth-intro"><p className="eyebrow">PRIMEIRO ACESSO</p><h1>Uso consciente,<br /><em>comunidade segura.</em></h1><p>Antes de participar, leia e aceite os documentos que regem a comunidade.</p></div><ul className="legal-list">{documents.map((document) => <li key={document.slug}><a href="/termos" target="_blank">{document.title} · {document.version}</a></li>)}</ul><label className="privacy-check legal-check"><input type="checkbox" checked={checked} onChange={(event) => setChecked(event.target.checked)} /><span>Li e aceito os documentos. Confirmo que a responsabilidade por qualquer decisão clínica é exclusivamente minha.</span></label>{error && <p className="login-error">{error}</p>}<button className="preview-button" disabled={!checked || busy} onClick={() => void accept()}>{busy ? "Registrando…" : "Aceitar e entrar"}</button><button className="auth-link" onClick={onSignOut}>Sair</button></section></main>; }
+function EmptyCases() { return <div className="empty-state"><Search size={28} /><h2>Nenhum caso encontrado</h2><p>Quando a turma publicar, os casos aparecerão aqui.</p></div>; }
