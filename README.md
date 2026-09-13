@@ -33,4 +33,4 @@ O GitHub Actions executa a verificação a cada push. Configure na Vercel soment
 
 ## Operação
 
-O painel Administração permite convidar participantes, atribuir papéis e desativar acessos. O endpoint de cron processa a caixa de saída de e-mails; configure `CRON_SECRET` também na Vercel para o cron. Os documentos provisórios estão no banco em `legal_documents` e devem ser substituídos pelos textos jurídicos finais antes da operação clínica contínua.
+O painel Administração permite convidar participantes, atribuir papéis e desativar acessos. O endpoint de cron processa a caixa de saída de e-mails; configure `CRON_SECRET` também na Vercel para o cron. No plano Hobby da Vercel o cron é diário; envio imediato requer um plano compatível ou worker externo. Os documentos provisórios estão no banco em `legal_documents` e devem ser substituídos pelos textos jurídicos finais antes da operação clínica contínua.
