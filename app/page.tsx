@@ -25,6 +25,7 @@ function MediaGlyph({ type }: { type: CommunityCase["media"] }) {
 
 export default function Home() {
   const [authenticated, setAuthenticated] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [needsPasswordSetup, setNeedsPasswordSetup] = useState(false);
   const [memberRole, setMemberRole] = useState<Role | null>(null);
@@ -69,10 +70,10 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, []);
 
-  if (!isSupabaseConfigured) return <ConfigurationScreen />;
-  if (!authReady) return <LoadingScreen />;
+  if (!isSupabaseConfigured && !previewMode) return <ConfigurationScreen onPreview={() => setPreviewMode(true)} />;
+  if (!authReady && !previewMode) return <LoadingScreen />;
   if (authenticated && needsPasswordSetup) return <SetPasswordScreen onComplete={() => setNeedsPasswordSetup(false)} />;
-  if (!authenticated) return <LoginScreen />;
+  if (!authenticated && !previewMode) return <LoginScreen />;
 
   const addReaction = (id: number) => {
     setLiked((old) => old.includes(id) ? old.filter((value) => value !== id) : [...old, id]);
@@ -111,7 +112,7 @@ export default function Home() {
         </nav>
         <div className="sidebar-bottom">
           <div className="disclaimer-mini"><ShieldCheck size={17} /><span>Ambiente educacional<br />com dados anonimizados</span></div>
-          <button className="profile" onClick={() => void supabase?.auth.signOut()}><span className="avatar avatar-user">{memberName.slice(0, 2).toUpperCase()}</span><span><b>{memberName}</b><small>{memberRole || "participante"} · Sair</small></span><ChevronDown size={16} /></button>
+          <button className="profile" onClick={() => previewMode ? setPreviewMode(false) : void supabase?.auth.signOut()}><span className="avatar avatar-user">{(previewMode ? "BD" : memberName.slice(0, 2)).toUpperCase()}</span><span><b>{previewMode ? "Prévia do beta" : memberName}</b><small>{previewMode ? "Dados fictícios · Sair" : `${memberRole || "participante"} · Sair`}</small></span><ChevronDown size={16} /></button>
         </div>
       </aside>
 
@@ -231,8 +232,8 @@ function SetPasswordScreen({ onComplete }: { onComplete: () => void }) {
   return <main className="auth-shell"><section className="auth-panel"><div className="auth-brand"><span className="brand-mark">K</span><div><b>KÓS</b><span>COOPERA</span></div></div><div className="auth-intro"><p className="eyebrow">ACESSO SEGURO</p><h1>Defina sua<br /><em>senha.</em></h1></div><form className="login-form" onSubmit={submit}><label>Nova senha<div><KeyRound size={17} /><input type="password" value={password} minLength={10} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" /></div></label><label>Repita a senha<div><KeyRound size={17} /><input type="password" value={confirm} minLength={10} onChange={(event) => setConfirm(event.target.value)} autoComplete="new-password" /></div></label>{error && <p className="login-error">{error}</p>}<button type="submit" disabled={pending}>{pending ? "Salvando…" : "Concluir acesso"}</button></form></section></main>;
 }
 
-function ConfigurationScreen() {
-  return <main className="auth-shell"><section className="auth-panel"><div className="auth-brand"><span className="brand-mark">K</span><div><b>KÓS</b><span>COOPERA</span></div></div><div className="auth-intro"><p className="eyebrow">BETA PRIVADO</p><h1>A comunidade está<br /><em>sendo preparada.</em></h1><p>O acesso será liberado após a configuração segura da infraestrutura.</p></div><p className="auth-disclaimer"><ShieldCheck size={14} />Sem dados clínicos reais nesta fase.</p></section></main>;
+function ConfigurationScreen({ onPreview }: { onPreview: () => void }) {
+  return <main className="auth-shell"><section className="auth-panel"><div className="auth-brand"><span className="brand-mark">K</span><div><b>KÓS</b><span>COOPERA</span></div></div><div className="auth-intro"><p className="eyebrow">BETA PRIVADO</p><h1>A comunidade está<br /><em>sendo preparada.</em></h1><p>O acesso por convite está sendo conectado. Enquanto isso, você pode conhecer a experiência mobile com conteúdo inteiramente fictício.</p></div><button className="preview-button" type="button" onClick={onPreview}>Explorar prévia do beta <ArrowRight size={18} /></button><p className="auth-disclaimer"><ShieldCheck size={14} />Sem dados clínicos reais nesta fase.</p></section></main>;
 }
 
 function LoadingScreen() {
