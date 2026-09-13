@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Kós Coopera">
+  <rect width="256" height="256" rx="52" fill="#171717"/>
+  <rect x="31" y="31" width="194" height="194" rx="36" fill="none" stroke="#DBBE6D" stroke-width="3"/>
+  <path d="M79 65v126M80 128l79-63M115 128l58 63" fill="none" stroke="#FCF0CE" stroke-width="15" stroke-linecap="square" stroke-linejoin="miter"/>
+  <circle cx="184" cy="64" r="7" fill="#DBBE6D"/>
+</svg>
