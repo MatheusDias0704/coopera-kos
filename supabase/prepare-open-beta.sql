@@ -30,6 +30,8 @@ removed_notifications as (
 removed_deliveries as (
   delete from public.email_deliveries where recipient_id in (select user_id from beta_members) returning id
 )
-delete from storage.objects
-where bucket_id = 'case-media'
-  and exists (select 1 from beta where storage.objects.name like beta.id::text || '/%');
+select
+  (select count(*) from removed_cases) as removed_cases,
+  (select count(*) from removed_conversations) as removed_conversations,
+  (select count(*) from removed_notifications) as removed_notifications,
+  (select count(*) from removed_deliveries) as removed_deliveries;
