@@ -1,8 +1,8 @@
 # Arquitetura do Coopera Kós
 
-O produto tem dois clientes, web Next.js e mobile Expo, e um banco Supabase compartilhado. A interface compartilhada é `createCoopera` de `@coopera/data-supabase`, já adotada pelo mobile. A web iniciou a adoção por `lib/web-data.ts`: consultas de comentários e filas administrativas, notificações e URLs temporárias de anexos usam essa interface. Os tipos web em `lib/types.ts` são reexportados do domínio.
+O produto tem dois clientes, web Next.js e mobile Expo, e um banco Supabase compartilhado. A interface compartilhada é `createCoopera` de `@coopera/data-supabase`, já adotada pelo mobile. A web iniciou a adoção por `lib/web-data.ts`: sessão/login/reset, aceite legal, comentários, reações, denúncias, filas e mutações administrativas, notificações e URLs temporárias de anexos usam essa interface. Os tipos web em `lib/types.ts` são reexportados do domínio.
 
-A migração web é incremental: `app/page.tsx` ainda contém autenticação, feed, publicação, mensagens e mutações administrativas com acesso direto ao cliente Supabase. Migrar esses fluxos exige verificar diferenças de validação e limites de consulta antes de substituir as operações legadas. O objetivo é retirar o conhecimento de tabelas, joins e Storage das telas sem alterar os fluxos em produção durante a extração.
+A migração web é incremental: `app/page.tsx` ainda contém feed, publicação/upload, mensagens privadas e síntese de mentor com acesso direto ao cliente Supabase. Migrar esses fluxos exige verificar diferenças de validação e limites de consulta antes de substituir as operações legadas. O objetivo é retirar o conhecimento de tabelas, joins e Storage das telas sem alterar os fluxos em produção durante a extração.
 
 ## Módulos e Interfaces
 

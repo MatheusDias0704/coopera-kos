@@ -60,12 +60,11 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    const client = supabase;
+    const client = webData;
     if (!client) return;
-    const boot = async () => { const { data: { session } } = await client.auth.getSession(); setSessionUser(session?.user ? { id: session.user.id, email: session.user.email } : null); if (session?.user) await loadWorkspace(session.user.id); else setReady(true); };
+    const boot = async () => { const session = await client.identity.session(); setSessionUser(session?.user ? { id: session.user.id, email: session.user.email } : null); if (session?.user) await loadWorkspace(session.user.id); else setReady(true); };
     void boot();
-    const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => { setSessionUser(session?.user ? { id: session.user.id, email: session.user.email } : null); if (session?.user) void loadWorkspace(session.user.id); else { setCases([]); setMembership(null); setReady(true); } });
-    return () => subscription.unsubscribe();
+    return client.identity.onSessionChange((session) => { setSessionUser(session?.user ? { id: session.user.id, email: session.user.email } : null); if (session?.user) void loadWorkspace(session.user.id); else { setCases([]); setMembership(null); setReady(true); } });
   }, [loadWorkspace]);
 
   useEffect(() => {
@@ -99,27 +98,28 @@ export default function HomePage() {
   if (!isSupabaseConfigured) return <ConfigurationScreen />;
   if (!ready) return <LoadingScreen />;
   if (!sessionUser) return <LoginScreen />;
-  if (!membership || !profile) return <AccessPending onSignOut={() => void supabase?.auth.signOut()} />;
-  if (!legalAccepted) return <LegalGate documents={legalDocuments} userId={sessionUser.id} onAccepted={() => setLegalAccepted(true)} onSignOut={() => void supabase?.auth.signOut()} />;
+  if (!membership || !profile) return <AccessPending onSignOut={() => void webData?.identity.logout()} />;
+  if (!legalAccepted) return <LegalGate documents={legalDocuments} onAccepted={() => setLegalAccepted(true)} onSignOut={() => void webData?.identity.logout()} />;
 
   const toggleReaction = async (caseId: string) => {
-    if (!supabase) return; const had = liked.includes(caseId);
+    if (!webData) return; const had = liked.includes(caseId);
     setLiked((old) => had ? old.filter((id) => id !== caseId) : [...old, caseId]);
-    const { error } = had ? await supabase.from("case_reactions").delete().eq("case_id", caseId).eq("user_id", sessionUser.id) : await supabase.from("case_reactions").insert({ case_id: caseId, user_id: sessionUser.id });
-    if (error) { notify("Não foi possível registrar a reação."); setLiked((old) => had ? [...old, caseId] : old.filter((id) => id !== caseId)); } else refresh();
+    try { await webData.discussion.react(caseId, !had); refresh(); }
+    catch { notify("Não foi possível registrar a reação."); setLiked((old) => had ? [...old, caseId] : old.filter((id) => id !== caseId)); }
   };
   const addComment = async (body: string) => {
-    if (!supabase || !webData || !selected || !body.trim()) return;
-    const { error } = await supabase.from("case_comments").insert({ case_id: selected.id, author_id: sessionUser.id, body: body.trim() });
-    if (error) notify("Não foi possível publicar o comentário."); else {
+    if (!webData || !selected || !body.trim()) return;
+    try {
+      await webData.discussion.comment(selected.id, body);
       notify("Comentário publicado."); refresh();
       try { setComments(await webData.discussion.list(selected.id)); }
       catch { notify("Comentário publicado, mas não foi possível atualizar a discussão."); }
-    }
+    } catch { notify("Não foi possível publicar o comentário."); }
   };
   const reportCase = async () => {
-    if (!supabase || !selected) return; const reason = window.prompt("Explique o motivo da denúncia (mínimo de 5 caracteres):")?.trim(); if (!reason || reason.length < 5) return;
-    const { error } = await supabase.from("content_reports").insert({ reporter_id: sessionUser.id, case_id: selected.id, reason }); notify(error ? "Não foi possível enviar a denúncia." : "Denúncia enviada à equipe de moderação.");
+    if (!webData || !selected) return; const reason = window.prompt("Explique o motivo da denúncia (mínimo de 5 caracteres):")?.trim(); if (!reason || reason.length < 5) return;
+    try { await webData.discussion.report({ caseId: selected.id, reason }); notify("Denúncia enviada à equipe de moderação."); }
+    catch { notify("Não foi possível enviar a denúncia."); }
   };
 
   return <main className="app-shell">
@@ -128,7 +128,7 @@ export default function HomePage() {
       <div className="brand"><span className="brand-mark">K</span><span className="brand-kos">KÓS</span><span className="brand-divider" /><span className="brand-coopera">COOPERA</span></div>
       <p className="cohort-label">{membership.cohorts?.name?.toUpperCase() ?? "TURMA ATIVA"}</p>
       <nav><button className="nav-item active"><BookOpen size={18} />Casos clínicos</button><button className="nav-item" onClick={() => setMessageOpen(true)}><MessageCircle size={18} />Mensagens</button><button className="nav-item" onClick={() => setNoticeOpen(true)}><Bell size={18} />Atualizações</button>{membership.role === "admin" && <button className="nav-item" onClick={() => setAdminOpen(true)}><Users size={18} />Administração</button>}</nav>
-      <div className="sidebar-bottom"><div className="disclaimer-mini"><ShieldCheck size={17} /><span>Ambiente educacional<br />dados anonimizados obrigatórios</span></div><button className="profile" onClick={() => void supabase?.auth.signOut()}><span className="avatar avatar-user">{profile.initials}</span><span><b>{profile.full_name}</b><small>{membership.role} · Sair</small></span><ChevronDown size={16} /></button></div>
+      <div className="sidebar-bottom"><div className="disclaimer-mini"><ShieldCheck size={17} /><span>Ambiente educacional<br />dados anonimizados obrigatórios</span></div><button className="profile" onClick={() => void webData?.identity.logout()}><span className="avatar avatar-user">{profile.initials}</span><span><b>{profile.full_name}</b><small>{membership.role} · Sair</small></span><ChevronDown size={16} /></button></div>
     </aside>
     <section className="workspace"><header className="topbar"><button className="mobile-menu" onClick={() => setMenuOpen(!menuOpen)} aria-label="Abrir menu"><Menu size={22} /></button><div className="crumb"><span>Comunidade</span><b>/</b><strong>Casos clínicos</strong></div><div className="top-actions"><button className="icon-button" onClick={() => setNoticeOpen(true)} aria-label="Notificações"><Bell size={19} /></button><button className="new-case" onClick={() => setComposerOpen(true)}><Plus size={18} />Publicar caso</button></div></header>
       <div className="content-area"><section className="feed-column"><div className="editorial-head"><div><p className="eyebrow">COMUNIDADE CLÍNICA · BLEFAROPLASTIA</p><h1>Raciocínio clínico<br /><em>feito em conjunto.</em></h1><p className="editorial-copy">Casos organizados, contexto preservado e sínteses que continuam úteis depois da discussão.</p></div><div className="weekly-note"><Sparkles size={17} /><span><b>{cases.filter((item) => item.status === "em_discussao").length} discussões abertas</b><br />na sua turma hoje</span></div></div><section className="community-pulse" aria-label="Resumo da comunidade"><div><span>em discussão</span><b>{cases.filter((item) => item.status === "em_discussao").length}</b></div><div><span>com síntese</span><b>{cases.filter((item) => item.status === "resolvido").length}</b></div><div><span>sua turma</span><b>{membership.cohorts?.name?.replace("Coopera Kós · ", "") ?? "ativa"}</b></div></section><div className="privacy-banner"><LockKeyhole size={18} /><span><b>Confidencialidade é coletiva.</b> Compartilhe apenas conteúdo anonimizado e com base legal. <a href="/termos">Ler termos e privacidade</a></span></div><div className="discovery-row"><label className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar técnica, tema ou colega" /></label></div><div className="feed-heading"><p>Discussões da turma</p><span>{visibleCases.length} {visibleCases.length === 1 ? "caso" : "casos"}</span></div><div className="filter-tabs">{(["todos", "em_discussao", "resolvido"] as const).map((value) => <button key={value} className={status === value ? "selected" : ""} onClick={() => setStatus(value)}>{value === "todos" ? "Todos" : caseStatus[value]}</button>)}</div><div className="case-list">{visibleCases.map((item) => <CaseCard key={item.id} item={item} liked={liked.includes(item.id)} selected={item.id === selected?.id} onSelect={() => selectCase(item)} onLike={() => void toggleReaction(item.id)} />)}{!visibleCases.length && <EmptyCases hasQuery={Boolean(query || status !== "todos")} onCreate={() => setComposerOpen(true)} />}</div></section><aside className="detail-column">{selected ? <CaseDetail selected={selected} comments={comments} role={membership.role} currentUser={sessionUser.id} liked={liked.includes(selected.id)} onLike={() => void toggleReaction(selected.id)} onComment={addComment} onReport={reportCase} onRefresh={refresh} /> : <EmptyCases />}</aside></div>
@@ -164,7 +164,6 @@ function Notifications({ onClose }: { onClose: () => void }) {
 
 function Messages({ cohortId, userId, onClose }: { cohortId: string; userId: string; onClose: () => void }) { const [people, setPeople] = useState<Profile[]>([]); const [contact, setContact] = useState<Profile | null>(null); const [conversation, setConversation] = useState<string | null>(null); const [messages, setMessages] = useState<Array<{ id: string; sender_id: string; body: string; created_at: string }>>([]); const [text, setText] = useState(""); useEffect(() => { if (!supabase) return; void supabase.from("memberships").select("user_id,profiles(id,full_name,initials,avatar_url)").eq("cohort_id", cohortId).eq("active", true).neq("user_id", userId).then(({ data }) => setPeople((data ?? []).map((row) => row.profiles as unknown as Profile).filter(Boolean))); }, [cohortId, userId]); const open = async (person: Profile) => { if (!supabase) return; const { data, error } = await supabase.rpc("open_direct_conversation_in_cohort", { target_user: person.id, target_cohort: cohortId }); if (error) return; setContact(person); setConversation(data); const { data: thread } = await supabase.from("direct_messages").select("id,sender_id,body,created_at").eq("conversation_id", data).order("created_at"); setMessages(thread ?? []); }; const send = async (event: FormEvent) => { event.preventDefault(); if (!supabase || !conversation || !text.trim()) return; const { error } = await supabase.from("direct_messages").insert({ conversation_id: conversation, sender_id: userId, body: text.trim() }); if (!error) { setText(""); const { data } = await supabase.from("direct_messages").select("id,sender_id,body,created_at").eq("conversation_id", conversation).order("created_at"); setMessages(data ?? []); } }; return <div className="modal-backdrop message-backdrop"><div className="messages-modal"><div className="modal-head"><div><p className="eyebrow">CONVERSAS PRIVADAS</p><h2>{contact ? contact.full_name : "Entre colegas."}</h2></div><button onClick={onClose}><X size={22} /></button></div>{!contact ? <div className="people-list">{people.map((person) => <button className="message-contact" key={person.id} onClick={() => void open(person)}><span className="avatar">{person.initials}</span><p><b>{person.full_name}</b><small>Iniciar conversa privada</small></p></button>)}</div> : <><button className="back-link" onClick={() => { setContact(null); setConversation(null); }}>← Contatos</button><div className="message-thread">{messages.map((message) => <div key={message.id} className={`message-bubble ${message.sender_id === userId ? "mine" : ""}`}>{message.body}</div>)}</div><form className="dm-form" onSubmit={(event) => void send(event)}><input value={text} onChange={(event) => setText(event.target.value)} placeholder="Escreva uma mensagem privada" /><button disabled={!text.trim()}><Send size={17} /></button></form></>}</div></div>; }
 
-function AdminPanel({ cohortId, onClose }: { cohortId: string; onClose: () => void }) { const [members, setMembers] = useState<Array<{ user_id: string; role: Role; active: boolean; profiles: Profile | null }>>([]); const [email, setEmail] = useState(""); const [fullName, setFullName] = useState(""); const [role, setRole] = useState<Role>("aluno"); const [message, setMessage] = useState(""); const token = async () => (await supabase?.auth.getSession())?.data.session?.access_token; const load = useCallback(async () => { if (!webData) return; try { setMembers(await webData.admin.listMembers(cohortId)); } catch { setMessage("Não foi possível carregar os participantes."); } }, [cohortId]); useEffect(() => { void load(); }, [load]); const invite = async (event: FormEvent) => { event.preventDefault(); const accessToken = await token(); const response = await fetch("/api/admin/invite", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ email, fullName, cohortId, role }) }); setMessage(response.ok ? "Convite enviado." : (await response.json()).error || "Falha ao enviar convite."); if (response.ok) { setEmail(""); setFullName(""); void load(); } }; const update = async (userId: string, update: Partial<{ role: Role; active: boolean }>) => { const accessToken = await token(); await fetch("/api/admin/membership", { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ cohortId, userId, ...update }) }); void load(); }; return <div className="modal-backdrop"><div className="composer admin-panel"><div className="modal-head"><div><p className="eyebrow">OPERAÇÃO DA TURMA</p><h2>Administração</h2></div><button onClick={onClose}><X size={22} /></button></div><form className="admin-invite" onSubmit={(event) => void invite(event)}><input required type="email" placeholder="E-mail profissional" value={email} onChange={(event) => setEmail(event.target.value)} /><input required placeholder="Nome completo" value={fullName} onChange={(event) => setFullName(event.target.value)} /><select value={role} onChange={(event) => setRole(event.target.value as Role)}><option value="aluno">Aluno</option><option value="mentor">Mentor</option><option value="admin">Administrador</option></select><button className="publish">Convidar</button></form>{message && <p className="login-notice">{message}</p>}<div className="member-list">{members.map((member) => <div key={member.user_id} className="member-row"><span className="avatar">{member.profiles?.initials ?? "CK"}</span><span><b>{member.profiles?.full_name ?? "Participante"}</b><small>{member.active ? "ativo" : "desativado"}</small></span><select value={member.role} onChange={(event) => void update(member.user_id, { role: event.target.value as Role })}><option value="aluno">Aluno</option><option value="mentor">Mentor</option><option value="admin">Admin</option></select><button className="link-button" onClick={() => void update(member.user_id, { active: !member.active })}>{member.active ? "Desativar" : "Reativar"}</button></div>)}</div></div></div>; }
 
 type AdminMember = { user_id: string; role: Role; active: boolean; profiles: Profile | null };
 type AdminReport = { id: string; case_id: string | null; comment_id: string | null; reason: string; created_at: string; case?: { id: string; code: string; title: string; status: CaseStatus } };
@@ -178,18 +177,18 @@ function AdminPanelEnhanced({ cohortId, onClose }: { cohortId: string; onClose: 
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<Role>("aluno");
   const [message, setMessage] = useState("");
-  const token = async () => (await supabase?.auth.getSession())?.data.session?.access_token;
   const load = useCallback(async () => {
-    if (!supabase || !webData) return;
+    const client = webData;
+    if (!client) return;
     const [memberResult, reportResult, deletionResult] = await Promise.allSettled([
-      webData.admin.listMembers(cohortId),
-      webData.admin.reports(),
-      webData.admin.deletionQueue(),
+      client.admin.listMembers(cohortId),
+      client.admin.reports(),
+      client.admin.deletionQueue(),
     ]);
     const reportRows = (reportResult.status === "fulfilled" ? reportResult.value : []) as AdminReport[];
     const caseIds = Array.from(new Set(reportRows.map((report) => report.case_id).filter(Boolean))) as string[];
-    const { data: caseRows } = caseIds.length ? await supabase.from("clinical_cases").select("id,code,title,status").in("id", caseIds) : { data: [] };
-    const caseMap = new Map((caseRows ?? []).map((item) => [item.id, item as AdminReport["case"]]));
+    const caseRows = await Promise.all(caseIds.map((caseId) => client.cases.get(caseId).catch(() => null)));
+    const caseMap = new Map(caseRows.filter((item): item is CaseRecord => Boolean(item)).map((item) => [item.id, { id: item.id, code: item.code, title: item.title, status: item.status }]));
     setMembers(memberResult.status === "fulfilled" ? memberResult.value : []);
     setReports(reportRows.map((report) => ({ ...report, case: report.case_id ? caseMap.get(report.case_id) : undefined })));
     setDeletions((deletionResult.status === "fulfilled" ? deletionResult.value : []) as DeletionRequest[]);
@@ -199,41 +198,32 @@ function AdminPanelEnhanced({ cohortId, onClose }: { cohortId: string; onClose: 
   useEffect(() => { void load(); }, [load]);
   const invite = async (event: FormEvent) => {
     event.preventDefault();
-    const accessToken = await token();
-    const response = await fetch("/api/admin/invite", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ email, fullName, cohortId, role }) });
-    setMessage(response.ok ? "Convite enviado." : (await response.json()).error || "Falha ao enviar convite.");
-    if (response.ok) { setEmail(""); setFullName(""); void load(); }
+    if (!webData) return;
+    try {
+      await webData.admin.invite({ email, fullName, cohortId, role });
+      setMessage("Convite enviado.");
+      setEmail(""); setFullName(""); void load();
+    } catch (cause) { setMessage(cause instanceof Error ? cause.message : "Falha ao enviar convite."); }
   };
   const updateMember = async (userId: string, update: Partial<{ role: Role; active: boolean }>) => {
-    const accessToken = await token();
-    const response = await fetch("/api/admin/membership", { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ cohortId, userId, ...update }) });
-    setMessage(response.ok ? "Participante atualizado." : "Não foi possível atualizar participante.");
-    void load();
+    if (!webData) return;
+    try { await webData.admin.updateMembership(cohortId, userId, update); setMessage("Participante atualizado."); void load(); }
+    catch (cause) { setMessage(cause instanceof Error ? cause.message : "Não foi possível atualizar participante."); }
   };
   const setCaseVisibility = async (caseId: string, hide: boolean) => {
-    if (!supabase) return;
-    const client = supabase;
-    const restoreStatus = async () => {
-      const { data: summary } = await client.from("mentor_summaries").select("id").eq("case_id", caseId).maybeSingle();
-      return summary ? "resolvido" : "em_discussao";
-    };
-    const status = hide ? "oculto" : await restoreStatus();
-    const { error } = await client.from("clinical_cases").update({ status, hidden_at: hide ? new Date().toISOString() : null }).eq("id", caseId);
-    setMessage(error ? "Não foi possível atualizar o caso." : hide ? "Caso ocultado." : "Caso restaurado.");
-    void load();
+    if (!webData) return;
+    try { if (hide) await webData.cases.hide(caseId); else await webData.admin.restoreCase(caseId); setMessage(hide ? "Caso ocultado." : "Caso restaurado."); void load(); }
+    catch { setMessage("Não foi possível atualizar o caso."); }
   };
   const resolveReport = async (reportId: string) => {
-    if (!supabase) return;
-    const { data: session } = await supabase.auth.getUser();
-    const { error } = await supabase.from("content_reports").update({ resolved_at: new Date().toISOString(), resolved_by: session.user?.id }).eq("id", reportId);
-    setMessage(error ? "Não foi possível revisar a denúncia." : "Denúncia revisada.");
-    void load();
+    if (!webData) return;
+    try { await webData.admin.reviewReport(reportId); setMessage("Denúncia revisada."); void load(); }
+    catch { setMessage("Não foi possível revisar a denúncia."); }
   };
   const reviewDeletion = async (userId: string, status: DeletionRequest["status"]) => {
-    if (!supabase) return;
-    const { error } = await supabase.from("account_deletion_requests").update({ status }).eq("user_id", userId);
-    setMessage(error ? "Não foi possível atualizar a fila de exclusão." : "Fila de exclusão atualizada.");
-    void load();
+    if (!webData || status === "pending") return;
+    try { await webData.admin.reviewDeletion(userId, status); setMessage("Fila de exclusão atualizada."); void load(); }
+    catch { setMessage("Não foi possível atualizar a fila de exclusão."); }
   };
   const activeMembers = members.filter((member) => member.active).length;
   const admins = members.filter((member) => member.role === "admin" && member.active).length;
@@ -251,36 +241,34 @@ function LoginScreen() {
   const clearMessage = () => { setError(""); setNotice(""); };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!supabase) return;
+    if (!webData) return;
     clearMessage();
     setPending(true);
-    const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    setPending(false);
-    if (authError) setError("Não foi possível entrar. Confira o e-mail e a senha ou redefina seu acesso.");
+    try { await webData.identity.login(email, password); }
+    catch { setError("Não foi possível entrar. Confira o e-mail e a senha ou redefina seu acesso."); }
+    finally { setPending(false); }
   };
   const setNewPassword = async (event: FormEvent) => {
     event.preventDefault();
     clearMessage();
-    if (!supabase || password.length < 8) { setError("Crie uma senha com pelo menos 8 caracteres."); return; }
+    if (!webData || password.length < 8) { setError("Crie uma senha com pelo menos 8 caracteres."); return; }
     setPending(true);
-    const { error: updateError } = await supabase.auth.updateUser({ password });
-    setPending(false);
-    if (updateError) setError("O link de acesso expirou. Solicite uma nova redefinição.");
-    else { setNotice("Senha atualizada. Você já pode entrar na comunidade."); window.history.replaceState({}, "", "/"); }
+    try { await webData.identity.updatePassword(password); setNotice("Senha atualizada. Você já pode entrar na comunidade."); window.history.replaceState({}, "", "/"); }
+    catch { setError("O link de acesso expirou. Solicite uma nova redefinição."); }
+    finally { setPending(false); }
   };
   const reset = async () => {
-    if (!supabase || !email) { setError("Informe seu e-mail profissional para receber o link seguro."); return; }
+    if (!webData || !email) { setError("Informe seu e-mail profissional para receber o link seguro."); return; }
     clearMessage(); setPending(true);
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/?set-password=1` });
-    setPending(false);
-    if (resetError) setError("Não foi possível solicitar a redefinição agora. Tente novamente.");
-    else setNotice("Se o e-mail estiver cadastrado, enviaremos um link seguro.");
+    try { await webData.identity.resetPassword(email, `${window.location.origin}/?set-password=1`); setNotice("Se o e-mail estiver cadastrado, enviaremos um link seguro."); }
+    catch { setError("Não foi possível solicitar a redefinição agora. Tente novamente."); }
+    finally { setPending(false); }
   };
   const signInWithGoogle = async () => {
-    if (!supabase) return;
+    if (!webData) return;
     clearMessage(); setPending(true);
-    const { error: oauthError } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin } });
-    if (oauthError) { setPending(false); setError("Não foi possível iniciar o acesso com Google. Tente novamente."); }
+    try { await webData.identity.signInWithGoogle(window.location.origin); }
+    catch { setPending(false); setError("Não foi possível iniciar o acesso com Google. Tente novamente."); }
   };
   const title = recovery ? <>Defina sua<br /><em>nova senha.</em></> : <>O conhecimento<br /><em>continua aqui.</em></>;
   return <main className="auth-shell"><section className="auth-panel">
@@ -301,5 +289,5 @@ function LoginScreen() {
 function ConfigurationScreen() { return <main className="auth-shell"><section className="auth-panel"><div className="auth-brand"><span className="brand-mark">K</span><div><b>KÓS</b><span>COOPERA</span></div></div><div className="auth-intro"><p className="eyebrow">CONFIGURAÇÃO NECESSÁRIA</p><h1>Ambiente ainda<br /><em>não conectado.</em></h1><p>O serviço de autenticação ainda não foi configurado neste deploy.</p></div></section></main>; }
 function LoadingScreen() { return <main className="auth-shell"><section className="auth-panel"><p className="auth-disclaimer">Verificando acesso seguro…</p></section></main>; }
 function AccessPending({ onSignOut }: { onSignOut: () => void }) { return <main className="auth-shell"><section className="auth-panel"><div className="auth-intro"><p className="eyebrow">ACESSO PENDENTE</p><h1>Sua conta ainda<br /><em>não está em uma turma.</em></h1><p>Peça à equipe Kós para concluir seu convite.</p></div><button className="preview-button" onClick={onSignOut}>Sair</button></section></main>; }
-function LegalGate({ documents, userId, onAccepted, onSignOut }: { documents: Array<{ slug: string; version: string; title: string }>; userId: string; onAccepted: () => void; onSignOut: () => void }) { const [checked, setChecked] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const accept = async () => { if (!supabase || !checked || !documents.length) return; setBusy(true); const { error: insertError } = await supabase.from("legal_acceptances").insert(documents.map((document) => ({ user_id: userId, document_slug: document.slug, document_version: document.version }))); setBusy(false); if (insertError) setError("Não foi possível registrar seu aceite. Tente novamente."); else onAccepted(); }; return <main className="auth-shell"><section className="auth-panel"><div className="auth-brand"><span className="brand-mark">K</span><div><b>KÓS</b><span>COOPERA</span></div></div><div className="auth-intro"><p className="eyebrow">PRIMEIRO ACESSO</p><h1>Uso consciente,<br /><em>comunidade segura.</em></h1><p>Antes de participar, leia e aceite os documentos que regem a comunidade.</p></div><ul className="legal-list">{documents.map((document) => <li key={document.slug}><a href="/termos" target="_blank">{document.title} · {document.version}</a></li>)}</ul><label className="privacy-check legal-check"><input type="checkbox" checked={checked} onChange={(event) => setChecked(event.target.checked)} /><span>Li e aceito os documentos. Confirmo que a responsabilidade por qualquer decisão clínica é exclusivamente minha.</span></label>{error && <p className="login-error">{error}</p>}<button className="preview-button" disabled={!checked || busy} onClick={() => void accept()}>{busy ? "Registrando…" : "Aceitar e entrar"}</button><button className="auth-link" onClick={onSignOut}>Sair</button></section></main>; }
+function LegalGate({ documents, onAccepted, onSignOut }: { documents: Array<{ slug: string; version: string; title: string }>; onAccepted: () => void; onSignOut: () => void }) { const [checked, setChecked] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const accept = async () => { if (!webData || !checked || !documents.length) return; setBusy(true); try { await webData.legal.accept(); onAccepted(); } catch { setError("Não foi possível registrar seu aceite. Tente novamente."); } finally { setBusy(false); } }; return <main className="auth-shell"><section className="auth-panel"><div className="auth-brand"><span className="brand-mark">K</span><div><b>KÓS</b><span>COOPERA</span></div></div><div className="auth-intro"><p className="eyebrow">PRIMEIRO ACESSO</p><h1>Uso consciente,<br /><em>comunidade segura.</em></h1><p>Antes de participar, leia e aceite os documentos que regem a comunidade.</p></div><ul className="legal-list">{documents.map((document) => <li key={document.slug}><a href="/termos" target="_blank">{document.title} · {document.version}</a></li>)}</ul><label className="privacy-check legal-check"><input type="checkbox" checked={checked} onChange={(event) => setChecked(event.target.checked)} /><span>Li e aceito os documentos. Confirmo que a responsabilidade por qualquer decisão clínica é exclusivamente minha.</span></label>{error && <p className="login-error">{error}</p>}<button className="preview-button" disabled={!checked || busy} onClick={() => void accept()}>{busy ? "Registrando…" : "Aceitar e entrar"}</button><button className="auth-link" onClick={onSignOut}>Sair</button></section></main>; }
 function EmptyCases({ hasQuery = false, onCreate }: { hasQuery?: boolean; onCreate?: () => void }) { return <div className="empty-state"><div className="empty-icon"><BookOpen size={24} /></div><span className="beta-pill">ACESSO POR CONVITE</span><h2>{hasQuery ? "Nenhum caso com estes filtros" : "Ainda não há discussões nesta turma"}</h2><p>{hasQuery ? "Tente outro tema, técnica ou status." : "Comece com uma pergunta clínica objetiva e contexto estritamente anonimizado. Sua turma verá a discussão aqui."}</p>{onCreate && !hasQuery && <button className="publish" onClick={onCreate}><Plus size={16} />Publicar o primeiro caso</button>}</div>; }
