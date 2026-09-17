@@ -11,6 +11,8 @@
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit && npm --workspace @coopera-kos/mobile run typecheck",
     "test": "npm --workspace @coopera/domain run test && npm --workspace @coopera/data-supabase run test",
+    "test:rls": "bash scripts/test-rls.sh",
+    "store:assets": "node scripts/generate-store-assets.mjs",
     "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {

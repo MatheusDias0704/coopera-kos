@@ -13,3 +13,12 @@ apps/mobile/dist/
 .vercel
 supabase/.temp/
 .env*
+!.env.example
+!apps/mobile/.env.example
+*.p12
+*.p8
+*.mobileprovision
+*.keystore
+*.jks
+*.ipa
+*.aab

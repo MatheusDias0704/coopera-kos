@@ -1,0 +1,17 @@
+.env
+.env.*
+node_modules
+.next
+dist
+coverage
+apps/mobile/node_modules
+apps/mobile/dist
+apps/mobile/.expo
+supabase/.temp
+*.p12
+*.p8
+*.mobileprovision
+*.keystore
+*.jks
+*.ipa
+*.aab
