@@ -20,3 +20,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ processed: queued?.length ?? 0 });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Falha." }, { status: 500 }); }
 }
+
+export const GET = POST;

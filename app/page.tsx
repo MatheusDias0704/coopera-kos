@@ -130,10 +130,89 @@ function Messages({ cohortId, userId, onClose }: { cohortId: string; userId: str
 
 function AdminPanel({ cohortId, onClose }: { cohortId: string; onClose: () => void }) { const [members, setMembers] = useState<Array<{ user_id: string; role: Role; active: boolean; profiles: Profile | null }>>([]); const [email, setEmail] = useState(""); const [fullName, setFullName] = useState(""); const [role, setRole] = useState<Role>("aluno"); const [message, setMessage] = useState(""); const token = async () => (await supabase?.auth.getSession())?.data.session?.access_token; const load = useCallback(async () => { if (!supabase) return; const { data } = await supabase.from("memberships").select("user_id,role,active,profiles(id,full_name,initials,avatar_url)").eq("cohort_id", cohortId).order("created_at"); setMembers((data ?? []) as unknown as typeof members); }, [cohortId]); useEffect(() => { void load(); }, [load]); const invite = async (event: FormEvent) => { event.preventDefault(); const accessToken = await token(); const response = await fetch("/api/admin/invite", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ email, fullName, cohortId, role }) }); setMessage(response.ok ? "Convite enviado." : (await response.json()).error || "Falha ao enviar convite."); if (response.ok) { setEmail(""); setFullName(""); void load(); } }; const update = async (userId: string, update: Partial<{ role: Role; active: boolean }>) => { const accessToken = await token(); await fetch("/api/admin/membership", { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ cohortId, userId, ...update }) }); void load(); }; return <div className="modal-backdrop"><div className="composer admin-panel"><div className="modal-head"><div><p className="eyebrow">OPERAÇÃO DA TURMA</p><h2>Administração</h2></div><button onClick={onClose}><X size={22} /></button></div><form className="admin-invite" onSubmit={(event) => void invite(event)}><input required type="email" placeholder="E-mail profissional" value={email} onChange={(event) => setEmail(event.target.value)} /><input required placeholder="Nome completo" value={fullName} onChange={(event) => setFullName(event.target.value)} /><select value={role} onChange={(event) => setRole(event.target.value as Role)}><option value="aluno">Aluno</option><option value="mentor">Mentor</option><option value="admin">Administrador</option></select><button className="publish">Convidar</button></form>{message && <p className="login-notice">{message}</p>}<div className="member-list">{members.map((member) => <div key={member.user_id} className="member-row"><span className="avatar">{member.profiles?.initials ?? "CK"}</span><span><b>{member.profiles?.full_name ?? "Participante"}</b><small>{member.active ? "ativo" : "desativado"}</small></span><select value={member.role} onChange={(event) => void update(member.user_id, { role: event.target.value as Role })}><option value="aluno">Aluno</option><option value="mentor">Mentor</option><option value="admin">Admin</option></select><button className="link-button" onClick={() => void update(member.user_id, { active: !member.active })}>{member.active ? "Desativar" : "Reativar"}</button></div>)}</div></div></div>; }
 
-function LoginScreen() { const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [pending, setPending] = useState(false); const recovery = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("set-password"); const submit = async (event: FormEvent) => { event.preventDefault(); if (!supabase) return; setPending(true); const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password }); setPending(false); setError(authError ? "Não foi possível entrar. Confira o e-mail e a senha ou redefina seu acesso." : ""); }; const setNewPassword = async (event: FormEvent) => { event.preventDefault(); if (!supabase || password.length < 8) { setError("Crie uma senha com pelo menos 8 caracteres."); return; } setPending(true); const { error: updateError } = await supabase.auth.updateUser({ password }); setPending(false); setError(updateError ? "O link de acesso expirou. Solicite uma nova redefinição." : "Senha atualizada. Você já pode entrar na comunidade."); if (!updateError) window.history.replaceState({}, "", "/"); }; const reset = async () => { if (!supabase || !email) { setError("Informe seu e-mail profissional para receber o link seguro."); return; } const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/?set-password=1` }); setError(resetError ? "Não foi possível solicitar a redefinição agora. Tente novamente." : "Se o e-mail estiver cadastrado, enviaremos um link seguro."); }; return <main className="auth-shell"><section className="auth-panel"><div className="auth-brand"><span className="brand-mark">K</span><div><b>KÓS</b><span>COOPERA</span></div></div><div className="auth-intro"><p className="eyebrow">{recovery ? "ACESSO SEGURO" : "COMUNIDADE CLÍNICA"}</p><h1>{recovery ? <>Defina sua<br /><em>nova senha.</em></> : <>O conhecimento<br /><em>continua aqui.</em></>}</h1><p>{recovery ? "Escolha uma senha pessoal para concluir seu acesso." : "Acesso exclusivo para participantes convidados."}</p></div><form className="login-form" onSubmit={(event) => void (recovery ? setNewPassword(event) : submit(event))}>{!recovery && <label>E-mail profissional<div><Mail size={17} /><input required type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} /></div></label>}<label>{recovery ? "Nova senha" : "Senha"}<div><KeyRound size={17} /><input required minLength={8} type="password" autoComplete={recovery ? "new-password" : "current-password"} value={password} onChange={(event) => setPassword(event.target.value)} /></div></label>{error && <p className={error.startsWith("Senha atualizada") ? "login-notice" : "login-error"}>{error}</p>}<button disabled={pending}>{pending ? "Verificando…" : recovery ? "Salvar nova senha" : "Entrar na comunidade"}</button></form>{!recovery && <button className="auth-link" onClick={() => void reset()}>Esqueci minha senha</button>}<p className="auth-disclaimer"><LockKeyhole size={14} />Ambiente educacional. Dados anonimizados obrigatórios.</p><p className="auth-disclaimer"><a href="/termos">Termos e Política de Privacidade</a></p></section></main>; }
+function LoginScreen() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [pending, setPending] = useState(false);
+  const recovery = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("set-password");
+  const googleEnabled = process.env.NEXT_PUBLIC_ENABLE_GOOGLE_AUTH === "true";
+  const clearMessage = () => { setError(""); setNotice(""); };
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!supabase) return;
+    clearMessage();
+    if (mode === "signup") {
+      if (!acceptedTerms) { setError("Leia e aceite os termos para criar sua conta."); return; }
+      setPending(true);
+      const response = await fetch("/api/auth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email.trim(), password, fullName: fullName.trim(), acceptedTerms }) });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({ error: "Não foi possível criar sua conta. Tente novamente." })) as { error?: string };
+        setPending(false);
+        setError(payload.error ?? "Não foi possível criar sua conta. Tente novamente.");
+        return;
+      }
+      const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      setPending(false);
+      if (authError) setNotice("Conta criada. Entre com seu e-mail e senha para acessar.");
+      else setNotice("Conta criada. Bem-vindo à turma beta.");
+      return;
+    }
+    setPending(true);
+    const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    setPending(false);
+    if (authError) setError("Não foi possível entrar. Confira o e-mail e a senha ou redefina seu acesso.");
+  };
+  const setNewPassword = async (event: FormEvent) => {
+    event.preventDefault();
+    clearMessage();
+    if (!supabase || password.length < 8) { setError("Crie uma senha com pelo menos 8 caracteres."); return; }
+    setPending(true);
+    const { error: updateError } = await supabase.auth.updateUser({ password });
+    setPending(false);
+    if (updateError) setError("O link de acesso expirou. Solicite uma nova redefinição.");
+    else { setNotice("Senha atualizada. Você já pode entrar na comunidade."); window.history.replaceState({}, "", "/"); }
+  };
+  const reset = async () => {
+    if (!supabase || !email) { setError("Informe seu e-mail profissional para receber o link seguro."); return; }
+    clearMessage(); setPending(true);
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/?set-password=1` });
+    setPending(false);
+    if (resetError) setError("Não foi possível solicitar a redefinição agora. Tente novamente.");
+    else setNotice("Se o e-mail estiver cadastrado, enviaremos um link seguro.");
+  };
+  const signInWithGoogle = async () => {
+    if (!supabase) return;
+    clearMessage(); setPending(true);
+    const { error: oauthError } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin } });
+    if (oauthError) { setPending(false); setError("Não foi possível iniciar o acesso com Google. Tente novamente."); }
+  };
+  const isSignup = mode === "signup" && !recovery;
+  const title = recovery ? <>Defina sua<br /><em>nova senha.</em></> : isSignup ? <>Crie seu acesso<br /><em>à comunidade.</em></> : <>O conhecimento<br /><em>continua aqui.</em></>;
+  return <main className="auth-shell"><section className="auth-panel">
+    <div className="auth-brand"><span className="brand-mark">K</span><div><b>KÓS</b><span>COOPERA</span></div></div>
+    {!recovery && <div className="auth-switch" role="tablist" aria-label="Opções de acesso"><button className={!isSignup ? "active" : ""} onClick={() => { setMode("login"); clearMessage(); }} role="tab" aria-selected={!isSignup}>Entrar</button><button className={isSignup ? "active" : ""} onClick={() => { setMode("signup"); clearMessage(); }} role="tab" aria-selected={isSignup}>Criar conta</button></div>}
+    <div className="auth-intro"><h1>{title}</h1><p>{recovery ? "Escolha uma senha pessoal para concluir seu acesso." : isSignup ? "Use seus dados profissionais para entrar na turma beta." : "Acesse com seu e-mail e senha cadastrados."}</p></div>
+    <form className="login-form" onSubmit={(event) => void (recovery ? setNewPassword(event) : submit(event))}>
+      {isSignup && <label>Nome completo<div><Users size={17} /><input required minLength={2} maxLength={100} autoComplete="name" value={fullName} onChange={(event) => setFullName(event.target.value)} /></div></label>}
+      {!recovery && <label>E-mail profissional<div><Mail size={17} /><input required type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} /></div></label>}
+      <label>{recovery ? "Nova senha" : "Senha"}<div><KeyRound size={17} /><input required minLength={8} type="password" autoComplete={recovery || isSignup ? "new-password" : "current-password"} value={password} onChange={(event) => setPassword(event.target.value)} /></div></label>
+      {isSignup && <label className="auth-consent"><input required type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)} /><span>Li e aceito os <a href="/termos" target="_blank">Termos e a Política de Privacidade</a>. Confirmo que publicarei apenas dados anonimizados.</span></label>}
+      {error && <p className="login-error" role="alert">{error}</p>}{notice && <p className="login-notice" role="status">{notice}</p>}
+      <button disabled={pending}>{pending ? "Aguarde…" : recovery ? "Salvar nova senha" : isSignup ? "Criar conta" : "Entrar"}</button>
+    </form>
+    {!recovery && !isSignup && <button className="auth-link" disabled={pending} onClick={() => void reset()}>Esqueci minha senha</button>}
+    {!recovery && googleEnabled && <button className="google-auth" disabled={pending} onClick={() => void signInWithGoogle()}>Continuar com Google</button>}
+    <p className="auth-disclaimer"><LockKeyhole size={14} />Ambiente beta educacional. Dados anonimizados obrigatórios.</p>
+  </section></main>;
+}
 
 function ConfigurationScreen() { return <main className="auth-shell"><section className="auth-panel"><div className="auth-brand"><span className="brand-mark">K</span><div><b>KÓS</b><span>COOPERA</span></div></div><div className="auth-intro"><p className="eyebrow">CONFIGURAÇÃO NECESSÁRIA</p><h1>Ambiente ainda<br /><em>não conectado.</em></h1><p>O serviço de autenticação ainda não foi configurado neste deploy.</p></div></section></main>; }
 function LoadingScreen() { return <main className="auth-shell"><section className="auth-panel"><p className="auth-disclaimer">Verificando acesso seguro…</p></section></main>; }
 function AccessPending({ onSignOut }: { onSignOut: () => void }) { return <main className="auth-shell"><section className="auth-panel"><div className="auth-intro"><p className="eyebrow">ACESSO PENDENTE</p><h1>Sua conta ainda<br /><em>não está em uma turma.</em></h1><p>Peça à equipe Kós para concluir seu convite.</p></div><button className="preview-button" onClick={onSignOut}>Sair</button></section></main>; }
 function LegalGate({ documents, userId, onAccepted, onSignOut }: { documents: Array<{ slug: string; version: string; title: string }>; userId: string; onAccepted: () => void; onSignOut: () => void }) { const [checked, setChecked] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const accept = async () => { if (!supabase || !checked || !documents.length) return; setBusy(true); const { error: insertError } = await supabase.from("legal_acceptances").insert(documents.map((document) => ({ user_id: userId, document_slug: document.slug, document_version: document.version }))); setBusy(false); if (insertError) setError("Não foi possível registrar seu aceite. Tente novamente."); else onAccepted(); }; return <main className="auth-shell"><section className="auth-panel"><div className="auth-brand"><span className="brand-mark">K</span><div><b>KÓS</b><span>COOPERA</span></div></div><div className="auth-intro"><p className="eyebrow">PRIMEIRO ACESSO</p><h1>Uso consciente,<br /><em>comunidade segura.</em></h1><p>Antes de participar, leia e aceite os documentos que regem a comunidade.</p></div><ul className="legal-list">{documents.map((document) => <li key={document.slug}><a href="/termos" target="_blank">{document.title} · {document.version}</a></li>)}</ul><label className="privacy-check legal-check"><input type="checkbox" checked={checked} onChange={(event) => setChecked(event.target.checked)} /><span>Li e aceito os documentos. Confirmo que a responsabilidade por qualquer decisão clínica é exclusivamente minha.</span></label>{error && <p className="login-error">{error}</p>}<button className="preview-button" disabled={!checked || busy} onClick={() => void accept()}>{busy ? "Registrando…" : "Aceitar e entrar"}</button><button className="auth-link" onClick={onSignOut}>Sair</button></section></main>; }
-function EmptyCases({ hasQuery = false, onCreate }: { hasQuery?: boolean; onCreate?: () => void }) { return <div className="empty-state"><div className="empty-icon"><BookOpen size={24} /></div><p className="eyebrow">{hasQuery ? "AJUSTE SUA BUSCA" : "A COMUNIDADE COMEÇA AQUI"}</p><h2>{hasQuery ? "Nenhum caso com estes filtros" : "Ainda não há discussões nesta turma"}</h2><p>{hasQuery ? "Tente outro tema, técnica ou status." : "O primeiro caso pode abrir uma conversa que ajude toda a turma."}</p>{onCreate && !hasQuery && <button className="publish" onClick={onCreate}><Plus size={16} />Publicar o primeiro caso</button>}</div>; }
+function EmptyCases({ hasQuery = false, onCreate }: { hasQuery?: boolean; onCreate?: () => void }) { return <div className="empty-state"><div className="empty-icon"><BookOpen size={24} /></div><span className="beta-pill">BETA</span><h2>{hasQuery ? "Nenhum caso com estes filtros" : "Ainda não há discussões nesta turma"}</h2><p>{hasQuery ? "Tente outro tema, técnica ou status." : "Comece com uma pergunta clínica objetiva e contexto estritamente anonimizado. Sua turma verá a discussão aqui."}</p>{onCreate && !hasQuery && <button className="publish" onClick={onCreate}><Plus size={16} />Publicar o primeiro caso</button>}</div>; }
