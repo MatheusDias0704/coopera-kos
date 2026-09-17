@@ -26,7 +26,7 @@ Categoria proposta: Educação. Preencher classificação de conteúdo pelo ques
 
 Coopera Kós é o ambiente educacional da comunidade Kós para participantes convidados de turmas ativas.
 
-Acesse os casos compartilhados pela sua turma, leia o contexto clínico e a pergunta proposta, e publique novos casos com informações anonimizadas. Você também pode anexar imagens para uso educacional, acompanhar atualizações e consultar seu perfil de participação.
+Acesse os casos compartilhados pela sua turma, leia o contexto clínico e a pergunta proposta, comente, reaja e acompanhe sínteses supervisionadas. Publique novos casos com informações anonimizadas e anexe imagens, PDFs ou vídeos quando necessário para o aprendizado. O app também oferece mensagens privadas 1:1 entre participantes da turma, bloqueio de usuários, denúncias, alertas internos e perfil de participação.
 
 O acesso exige uma conta previamente convidada. A publicação exige confirmação de anonimização e da base legal para o uso educacional do conteúdo. Não inclua nomes, documentos, imagens identificáveis ou outros dados que permitam identificar pacientes.
 
@@ -41,17 +41,21 @@ Preencher somente no campo protegido do console: e-mail e senha da conta de revi
 Roteiro:
 
 1. Na tela inicial, selecione “Entrar”, informe as credenciais fornecidas e toque em “Entrar na comunidade”.
-2. Na aba de casos, abra um caso de demonstração para ler contexto e pergunta.
-3. Abra “Publicar caso”, preencha título, contexto e pergunta com conteúdo fictício, confirme a anonimização e publique. O acesso às fotos é usado somente se o revisor escolher anexar uma imagem.
-4. Abra “Perfil” para consultar a participação. “Solicitar exclusão de conta” inicia uma solicitação que deve ser atendida pela equipe; use uma segunda conta descartável ao testar esse fluxo.
-5. “Sair da conta” encerra o acesso.
-
-Adicionar ao roteiro os caminhos reais para denúncia, bloqueio, termos e suporte após sua implementação e validação. A versão mobile atual não oferece conversa 1:1, escrita de comentários ou denúncia pela tela de caso; não anunciar essas funcionalidades na ficha nem usar a ficha para ocultar essa pendência de produto.
+2. Na aba de casos, abra um caso de demonstração para ler contexto, pergunta, anexos e discussão.
+3. Publique um comentário, registre uma reação e abra “Denunciar” para confirmar que o canal de moderação existe.
+4. Abra “Publicar caso”, preencha título, contexto e pergunta com conteúdo fictício, confirme a anonimização e publique. O acesso às fotos é usado somente se o revisor escolher anexar uma imagem.
+5. Abra “Mensagens”, selecione outro participante da turma, envie uma mensagem de teste e valide o botão de bloqueio/desbloqueio.
+6. Abra “Atualizações” para ver alertas internos e marque um alerta como lido.
+7. Abra “Perfil” para ler termos/suporte, solicitar exclusão de conta e sair.
 
 ## Campos operacionais ainda necessários
 
-- URL HTTPS de suporte, política de privacidade e termos, acessíveis sem login.
-- URL HTTPS de solicitação de exclusão para Google Play, acessível sem instalar o app.
+- URL HTTPS de suporte, política de privacidade, remoção, exclusão e termos, acessíveis sem login no deploy final:
+  - `/suporte`
+  - `/privacidade`
+  - `/remocao`
+  - `/exclusao`
+  - `/termos`
 - Nome/contato do desenvolvedor, direitos autorais, países e preço definidos pelo titular.
 - Conta de revisão ativa e contato de atendimento validado.
 - App Privacy e Data Safety preenchidos a partir da coleta real de conta, conteúdo, anexos e fornecedores; não assumir ausência de coleta.

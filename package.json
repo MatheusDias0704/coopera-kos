@@ -2,7 +2,10 @@
   "name": "coopera-kos",
   "version": "0.1.0",
   "private": true,
-  "workspaces": ["packages/*", "apps/mobile"],
+  "workspaces": [
+    "packages/*",
+    "apps/mobile"
+  ],
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
@@ -21,8 +24,11 @@
     "@supabase/supabase-js": "^2.49.1",
     "lucide-react": "^0.475.0",
     "next": "^15.2.1",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "overrides": {
+    "expo-font": "14.0.12"
   },
   "devDependencies": {
     "@types/node": "^22.13.4",

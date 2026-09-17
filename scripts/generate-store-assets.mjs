@@ -8,7 +8,7 @@ const muted = "#756E62";
 
 async function pngFromSvg(svg, out, width, height) {
   await mkdir(new URL(".", `file://${process.cwd()}/${out}`), { recursive: true });
-  await sharp(Buffer.from(svg)).resize(width, height).png().toFile(out);
+  await sharp(Buffer.from(svg)).resize(width, height).flatten({ background: ink }).png().toFile(out);
 }
 
 function appIcon(size = 1024) {

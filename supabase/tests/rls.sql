@@ -63,6 +63,7 @@ select pg_temp.assert_true((select count(*)=0 from public.direct_messages),'inac
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000005',true);
 select pg_temp.assert_true((select count(*)=0 from public.clinical_cases),'other cohort admin reads no cases');
 select pg_temp.assert_true((select count(*)=0 from public.content_reports),'other cohort admin reads no reports');
+select pg_temp.assert_true((select count(*)=0 from public.account_deletion_requests),'other cohort admin reads no deletion requests');
 select pg_temp.assert_true((select count(*)=0 from storage.objects),'other cohort cannot read media');
 do $$ begin begin perform public.open_direct_conversation_in_cohort('10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000002'); raise exception 'FAIL: cross-cohort conversation'; exception when insufficient_privilege then null; end; end; $$;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000002',true);
@@ -70,6 +71,9 @@ do $$ begin begin insert into storage.objects(bucket_id,name,owner_id) values('c
 insert into public.mentor_summaries(case_id,mentor_id,body) values('30000000-0000-0000-0000-000000000001',auth.uid(),'Síntese de discussão educacional supervisionada.');
 select pg_temp.assert_true((select status='resolvido' from public.clinical_cases limit 1),'mentor summary resolves case');
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003',true);
+select pg_temp.assert_true((select count(*)=1 from public.account_deletion_requests),'cohort admin reads deletion queue');
+update public.account_deletion_requests set status='processing' where user_id='10000000-0000-0000-0000-000000000001';
+select pg_temp.assert_true((select status='processing' from public.account_deletion_requests),'cohort admin reviews deletion request');
 update public.clinical_cases set status='oculto',hidden_at=now() where id='30000000-0000-0000-0000-000000000001';
 update public.content_reports set resolved_by=auth.uid(),resolved_at=now() where id='50000000-0000-0000-0000-000000000001';
 select pg_temp.assert_true((select count(*)>=2 from public.audit_logs),'moderation audit recorded');

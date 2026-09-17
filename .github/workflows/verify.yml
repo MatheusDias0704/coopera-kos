@@ -42,6 +42,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - run: node scripts/check-store-assets.mjs
       - run: npm run build
       - run: npm run build:mobile
       - name: Smoke web build

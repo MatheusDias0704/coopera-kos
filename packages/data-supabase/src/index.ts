@@ -40,6 +40,7 @@ export function createCoopera(client: SupabaseClient, options: { serverUrl?: str
       async workspace(userId: string): Promise<{ profile: Profile | null; membership: Membership | null }> { const [profile, membership] = await Promise.all([client.from("profiles").select(profileFields).eq("id", userId).maybeSingle(), client.from("memberships").select("cohort_id,role,active,cohorts(id,name)").eq("user_id", userId).eq("active", true).order("created_at").limit(1).maybeSingle()]); return { profile: unwrap(profile) as Profile | null, membership: unwrap(membership) as unknown as Membership | null }; },
     },
     cases: {
+      async get(caseId: string): Promise<CaseRecord | null> { return unwrap(await client.from("clinical_cases").select(caseFields).eq("id", caseId).maybeSingle()) as unknown as CaseRecord | null; },
       async list(cohortId: string): Promise<CaseRecord[]> { return (unwrap(await client.from("clinical_cases").select(caseFields).eq("cohort_id", cohortId).order("created_at", { ascending: false }).limit(100)) ?? []) as unknown as CaseRecord[]; },
       async create(input: CaseInput): Promise<{ id: string }> { const fields = ClinicalCases.prepare(input); const user = await currentUser(); const consent = await legal.status(user.id); if (!consent.accepted) throw new DomainError("forbidden", "Aceite os documentos vigentes antes de publicar."); const created = unwrap(await client.from("clinical_cases").insert({ ...fields, author_id: user.id, code: `CASO-${new Date().getFullYear()}-${randomId().slice(0, 8).toUpperCase()}`, privacy_acknowledged_at: new Date().toISOString() }).select("id").single()); if (!created) throw new Error("Não foi possível publicar o caso."); return created; },
       async edit(caseId: string, input: CaseInput) { const user = await currentUser(); const fields = ClinicalCases.prepare(input); const result = unwrap(await client.from("clinical_cases").update(fields).eq("id", caseId).eq("author_id", user.id).eq("status", "em_discussao").select("id").single()); return result; },
@@ -59,6 +60,7 @@ export function createCoopera(client: SupabaseClient, options: { serverUrl?: str
       async getTemporaryUrl(path: string) { const result = unwrap(await client.storage.from("case-media").createSignedUrl(path, 60)); if (!result) throw new Error("Anexo indisponível."); return result.signedUrl; },
     },
     messaging: {
+      async list(cohortId: string) { return unwrap(await client.from("direct_conversations").select(`id,cohort_id,created_at,conversation_members(user_id,profiles(${profileFields}))`).eq("cohort_id", cohortId).order("created_at", { ascending: false }).limit(100)) ?? []; },
       async people(cohortId: string): Promise<Profile[]> { const user = await currentUser(); const rows = unwrap(await client.from("memberships").select(`user_id,profiles(${profileFields})`).eq("cohort_id", cohortId).eq("active", true).neq("user_id", user.id)); return (rows ?? []).map(row => row.profiles as unknown as Profile).filter(Boolean); },
       async openConversation(userId: string, cohortId: string): Promise<string> { return unwrap(await client.rpc("open_direct_conversation_in_cohort", { target_user: userId, target_cohort: cohortId })); },
       async listMessages(conversationId: string): Promise<DirectMessage[]> { return (unwrap(await client.from("direct_messages").select("id,sender_id,body,created_at").eq("conversation_id", conversationId).order("created_at", { ascending: false }).limit(100)) ?? []).reverse(); },
@@ -73,6 +75,8 @@ export function createCoopera(client: SupabaseClient, options: { serverUrl?: str
     },
     legal,
     admin: {
+      async deletionQueue() { return unwrap(await client.from("account_deletion_requests").select("user_id,requested_at,status").neq("status", "completed").order("requested_at")) ?? []; },
+      async reviewDeletion(userId: string, status: "processing" | "completed") { if (!["processing", "completed"].includes(status)) throw new DomainError("invalid_input", "Estado de exclusão inválido."); unwrap(await client.from("account_deletion_requests").update({ status }).eq("user_id", userId).select("user_id").single()); },
       async listMembers(cohortId: string): Promise<MemberRecord[]> { return (unwrap(await client.from("memberships").select(`user_id,role,active,profiles(${profileFields})`).eq("cohort_id", cohortId).order("created_at")) ?? []) as unknown as MemberRecord[]; },
       async invite(input: { email: string; fullName: string; cohortId: string; role: Role }) { return request("/api/admin/invite", "POST", { ...input, email: IdentityAccess.credentials(input.email, "invite").email, fullName: text(input.fullName, "Nome", 2, 100) }); },
       async updateMembership(cohortId: string, userId: string, update: { role?: Role; active?: boolean }) { const actor = await currentUser(); AdminOperations.membership(actor.id, userId, update); return request("/api/admin/membership", "PATCH", { cohortId, userId, ...update }); },

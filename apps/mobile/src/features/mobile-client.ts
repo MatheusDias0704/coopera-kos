@@ -1,7 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createCoopera } from "@coopera/data-supabase";
 import type { CaseRecord } from "@coopera/domain";
-import type { ActiveMember, AppNotification, ClinicalCase } from "./models";
+import type { ActiveMember, AppNotification, CaseComment, ClinicalCase, DirectMessage, MessagePerson } from "./models";
 
 export type MobileClient = {
   isConfigured(): boolean;
@@ -11,8 +12,23 @@ export type MobileClient = {
   currentMember(): Promise<ActiveMember | null>;
   logout(): Promise<void>;
   listCases(): Promise<ClinicalCase[]>;
+  getCase(id: string): Promise<ClinicalCase | null>;
+  listComments(caseId: string): Promise<CaseComment[]>;
+  comment(caseId: string, body: string): Promise<void>;
+  react(caseId: string, active: boolean): Promise<void>;
+  reactions(): Promise<string[]>;
+  reportCase(caseId: string, reason: string): Promise<void>;
+  attachmentUrl(path: string): Promise<string>;
   publishCase(input: { title: string; context: string; question: string; mediaUri?: string }): Promise<void>;
+  people(): Promise<MessagePerson[]>;
+  openConversation(userId: string): Promise<string>;
+  listMessages(conversationId: string): Promise<DirectMessage[]>;
+  sendMessage(conversationId: string, body: string): Promise<void>;
+  blockUser(userId: string): Promise<void>;
+  unblockUser(userId: string): Promise<void>;
+  blockedUsers(): Promise<Array<{ blockedId: string; createdAt: string }>>;
   listNotifications(): Promise<AppNotification[]>;
+  markNotificationRead(id: string): Promise<void>;
   requestAccountDeletion(): Promise<void>;
 };
 
@@ -22,7 +38,7 @@ const serverUrl = process.env.EXPO_PUBLIC_COOPERA_SERVER_URL;
 
 const supabase = supabaseUrl && supabaseKey
   ? createClient(supabaseUrl, supabaseKey, {
-      auth: { persistSession: false, autoRefreshToken: true, detectSessionInUrl: false },
+      auth: { storage: AsyncStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
     })
   : null;
 const coopera = supabase ? createCoopera(supabase, { serverUrl }) : null;
@@ -61,6 +77,12 @@ function mapCase(record: CaseRecord): ClinicalCase {
     tags: record.tags ?? [],
     comments: record.case_comments?.[0]?.count ?? 0,
     reactions: record.case_reactions?.[0]?.count ?? 0,
+    authorId: record.author_id,
+    mode: record.mode,
+    assessment: record.assessment,
+    body: record.body,
+    attachments: (record.case_attachments ?? []).map((attachment) => ({ id: attachment.id, filename: attachment.filename, kind: attachment.kind, storagePath: attachment.storage_path })),
+    mentorSummary: record.mentor_summaries?.[0] ? { body: record.mentor_summaries[0].body, author: record.mentor_summaries[0].profiles?.full_name ?? "Mentor Kós", createdAt: labelDate(record.mentor_summaries[0].created_at) } : null,
   };
 }
 
@@ -128,6 +150,20 @@ export const mobileClient: MobileClient = {
     const { coopera } = ensureConfigured();
     return (await coopera.cases.list(activeCohortId)).map(mapCase);
   },
+  async getCase(id) {
+    const { coopera } = ensureConfigured();
+    const record = await coopera.cases.get(id);
+    return record ? mapCase(record) : null;
+  },
+  async listComments(caseId) {
+    const { coopera } = ensureConfigured();
+    return (await coopera.discussion.list(caseId)).map((comment) => ({ id: comment.id, body: comment.body, createdAt: labelDate(comment.created_at), author: comment.profiles?.full_name ?? "Participante Kós", initials: comment.profiles?.initials ?? initials(comment.profiles?.full_name ?? "Participante Kós") }));
+  },
+  async comment(caseId, body) { const { coopera } = ensureConfigured(); await coopera.discussion.comment(caseId, body); },
+  async react(caseId, active) { const { coopera } = ensureConfigured(); await coopera.discussion.react(caseId, active); },
+  async reactions() { const { coopera } = ensureConfigured(); return coopera.discussion.reactions(); },
+  async reportCase(caseId, reason) { const { coopera } = ensureConfigured(); await coopera.discussion.report({ caseId, reason }); },
+  async attachmentUrl(path) { const { coopera } = ensureConfigured(); return coopera.media.getTemporaryUrl(path); },
   async publishCase(input) {
     if (!activeCohortId) await loadWorkspace();
     if (!activeCohortId) throw new Error("Turma ativa indisponível.");
@@ -158,6 +194,24 @@ export const mobileClient: MobileClient = {
       return [];
     }
   },
+  async markNotificationRead(id) { const { coopera } = ensureConfigured(); await coopera.notifications.markRead(id); },
+  async people() {
+    if (!activeCohortId) await loadWorkspace();
+    if (!activeCohortId) return [];
+    const { coopera } = ensureConfigured();
+    return (await coopera.messaging.people(activeCohortId)).map((person) => ({ id: person.id, name: person.full_name, initials: person.initials || initials(person.full_name) }));
+  },
+  async openConversation(userId) {
+    if (!activeCohortId) await loadWorkspace();
+    if (!activeCohortId) throw new Error("Turma ativa indisponível.");
+    const { coopera } = ensureConfigured();
+    return coopera.messaging.openConversation(userId, activeCohortId);
+  },
+  async listMessages(conversationId) { const { coopera } = ensureConfigured(); return (await coopera.messaging.listMessages(conversationId)).map((message) => ({ id: message.id, senderId: message.sender_id, body: message.body, createdAt: labelDate(message.created_at) })); },
+  async sendMessage(conversationId, body) { const { coopera } = ensureConfigured(); await coopera.messaging.sendMessage(conversationId, body); },
+  async blockUser(userId) { const { coopera } = ensureConfigured(); await coopera.messaging.blockUser(userId); },
+  async unblockUser(userId) { const { coopera } = ensureConfigured(); await coopera.messaging.unblockUser(userId); },
+  async blockedUsers() { const { coopera } = ensureConfigured(); return (await coopera.messaging.blockedUsers()).map((block) => ({ blockedId: block.blocked_id, createdAt: labelDate(block.created_at) })); },
   async requestAccountDeletion() {
     const { coopera } = ensureConfigured();
     await coopera.identity.requestAccountDeletion();
