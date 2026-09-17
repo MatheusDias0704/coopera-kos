@@ -1,0 +1,21 @@
+export type Role = "aluno" | "mentor" | "admin";
+export type CaseStatus = "em_discussao" | "resolvido" | "oculto";
+export type CaseMode = "roteiro_clinico" | "texto_livre" | "modelo";
+export type Profile = { id: string; full_name: string; initials: string; avatar_url: string | null };
+export type Membership = { cohort_id: string; role: Role; active: boolean; cohorts: { id: string; name: string } | null };
+export type CaseRecord = {
+  id: string; code: string; title: string; mode: CaseMode; status: CaseStatus; clinical_context: string | null;
+  assessment: string | null; body: string | null; template_name: string | null; community_question: string;
+  tags: string[]; created_at: string; resolved_at: string | null; author_id: string;
+  profiles: Profile | null; mentor_summaries: Array<{ id: string; body: string; created_at: string; profiles: Profile | null }>;
+  case_attachments: Array<{ id: string; filename: string; kind: "imagem" | "pdf" | "video"; storage_path: string }>;
+  case_comments: Array<{ count: number }>; case_reactions: Array<{ count: number }>;
+};
+export type LegalDocument = { slug: string; version: string; title: string };
+export type LegalAcceptance = { document_slug: string; document_version: string };
+export type CaseInput = { cohortId: string; title: string; mode: CaseMode; communityQuestion: string; clinicalContext?: string; assessment?: string; body?: string; templateName?: string; tags?: string[]; privacyAcknowledged: boolean };
+export type AttachmentInput = { name: string; type: string; size: number; body: Blob | ArrayBuffer };
+export type Comment = { id: string; body: string; created_at: string; profiles: Profile | null };
+export type DirectMessage = { id: string; sender_id: string; body: string; created_at: string };
+export type Notification = { id: string; title: string; body: string | null; href: string | null; created_at: string; read_at: string | null };
+export type MemberRecord = { user_id: string; role: Role; active: boolean; profiles: Profile | null };

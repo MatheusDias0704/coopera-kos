@@ -1,0 +1,8 @@
+import { StyleSheet, Text, View } from "react-native";
+import { Feather } from "@expo/vector-icons";
+import { colors, type } from "@/src/theme/tokens";
+
+export default function MessagesScreen() {
+  return <View style={styles.page}><Text style={styles.title}>Mensagens</Text><Text style={styles.copy}>Conversas privadas com pessoas da sua turma.</Text><View style={styles.empty}><Feather name="message-circle" size={28} color={colors.goldDark}/><Text style={styles.emptyTitle}>Nenhuma conversa aberta</Text><Text style={styles.emptyCopy}>As conversas 1:1 serão exibidas aqui quando iniciadas entre participantes ativos da mesma turma.</Text></View><View style={styles.notice}><Feather name="lock" color={colors.goldDark} size={18}/><Text style={styles.noticeText}>Mensagens são privadas, não têm link público e respeitam bloqueio de usuário.</Text></View></View>;
+}
+const styles=StyleSheet.create({page:{flex:1,backgroundColor:colors.paper,padding:20},title:{fontFamily:type.display,fontSize:32,fontWeight:"700",letterSpacing:-1,color:colors.ink},copy:{fontSize:13,color:colors.muted,marginTop:7,marginBottom:26},empty:{borderWidth:1,borderStyle:"dashed",borderColor:"#D8CDB6",padding:34,alignItems:"center",backgroundColor:"rgba(255,255,255,.55)"},emptyTitle:{fontFamily:type.display,fontSize:22,fontWeight:"700",marginTop:13,color:colors.ink},emptyCopy:{fontSize:12,lineHeight:18,color:colors.muted,textAlign:"center",marginTop:7},notice:{marginTop:22,backgroundColor:colors.softGold,borderWidth:1,borderColor:"#EADBB4",padding:14,flexDirection:"row",gap:8},noticeText:{fontSize:11,lineHeight:17,color:"#5F553C",flex:1}});

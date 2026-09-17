@@ -2,14 +2,20 @@
   "name": "coopera-kos",
   "version": "0.1.0",
   "private": true,
+  "workspaces": ["packages/*", "apps/mobile"],
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
+    "build:mobile": "npm --workspace @coopera-kos/mobile run export:android",
     "start": "next start",
     "lint": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && npm --workspace @coopera-kos/mobile run typecheck",
+    "test": "npm --workspace @coopera/domain run test && npm --workspace @coopera/data-supabase run test",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
+    "@coopera/data-supabase": "1.0.0",
+    "@coopera/domain": "1.0.0",
     "@supabase/supabase-js": "^2.49.1",
     "lucide-react": "^0.475.0",
     "next": "^15.2.1",

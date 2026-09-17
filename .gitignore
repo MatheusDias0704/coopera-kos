@@ -1,5 +1,9 @@
 node_modules/
 .next/
+dist/
+coverage/
+apps/mobile/.expo/
+apps/mobile/dist/
 .env
 .env.local
 .env.*.local
@@ -7,3 +11,5 @@ node_modules/
 .DS_Store
 
 .vercel
+supabase/.temp/
+.env*

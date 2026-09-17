@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Coopera Kós",
+    "slug": "coopera-kos",
+    "scheme": "cooperakos",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
+    "splash": { "image": "./assets/splash.png", "resizeMode": "contain", "backgroundColor": "#171717" },
+    "ios": {
+      "bundleIdentifier": "br.com.institutokos.cooperakos",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "O Coopera Kós usa imagens somente para anexar conteúdo clínico anonimizado a um caso."
+      }
+    },
+    "android": {
+      "package": "br.com.institutokos.cooperakos",
+      "adaptiveIcon": { "foregroundImage": "./assets/icon.png", "backgroundColor": "#171717" },
+      "permissions": ["android.permission.READ_MEDIA_IMAGES"],
+      "blockedPermissions": ["android.permission.RECORD_AUDIO"]
+    },
+    "plugins": [
+      "expo-router",
+      ["expo-image-picker", { "photosPermission": "Permita o acesso às fotos para anexar conteúdo clínico anonimizado." }]
+    ],
+    "experiments": { "typedRoutes": true }
+  }
+}

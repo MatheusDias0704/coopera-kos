@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "../../../../lib/server-supabase";
 
+function isMissingCohortAuditColumn(message: string) {
+  return /cohort_id|schema cache|column/i.test(message);
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json() as { email?: string; fullName?: string; cohortId?: string; role?: "aluno" | "mentor" | "admin" };
@@ -19,7 +23,13 @@ export async function POST(request: Request) {
     if (profileError) return NextResponse.json({ error: profileError.message }, { status: 400 });
     const { error: membershipError } = await admin.from("memberships").upsert({ cohort_id: body.cohortId, user_id: data.user.id, role: body.role, active: true });
     if (membershipError) return NextResponse.json({ error: membershipError.message }, { status: 400 });
-    await admin.from("audit_logs").insert({ actor_id: user.id, action: "invite", target_type: "membership", target_id: data.user.id, metadata: { email, role: body.role, cohortId: body.cohortId } });
+    const auditPayload = { actor_id: user.id, cohort_id: body.cohortId, action: "invite", target_type: "membership", target_id: data.user.id, metadata: { email, role: body.role, cohortId: body.cohortId } };
+    const { error: auditError } = await admin.from("audit_logs").insert(auditPayload);
+    if (auditError) {
+      const { cohort_id: _cohortId, ...legacyAuditPayload } = auditPayload;
+      const { error: legacyAuditError } = isMissingCohortAuditColumn(auditError.message) ? await admin.from("audit_logs").insert(legacyAuditPayload) : { error: auditError };
+      if (legacyAuditError) return NextResponse.json({ error: `Convite criado, mas a auditoria falhou: ${legacyAuditError.message}` }, { status: 500 });
+    }
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Falha ao convidar." }, { status: 403 });
