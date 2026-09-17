@@ -76,3 +76,18 @@ html,body{max-width:100%;overflow-x:hidden}
   .feed-column{padding-left:14px!important;padding-right:14px!important}
   .editorial-head h1{font-size:30px!important}
 }
+
+/* iPhone/DevTools hardening: do not let the desktop rail survive on small devices. */
+@media(max-width:800px),(max-device-width:800px){
+  html,body{width:100%;max-width:100%;overflow-x:clip!important}
+  .app-shell{display:block!important;width:100dvw!important;max-width:100dvw!important;min-width:0!important;overflow-x:clip!important}
+  .sidebar{width:min(82vw,246px)!important;transform:translateX(-102%)!important}
+  .sidebar.sidebar-open{transform:translateX(0)!important}
+  .workspace{display:block!important;margin:0!important;width:100dvw!important;max-width:100dvw!important;min-width:0!important;overflow-x:clip!important}
+  .topbar{left:0!important;right:0!important;width:100dvw!important;max-width:100dvw!important;margin:0!important}
+  .mobile-menu{display:block!important}
+  .content-area{display:block!important;grid-template-columns:none!important;width:100%!important;max-width:100%!important;margin:0!important;padding:0 0 96px!important;overflow-x:clip!important}
+  .feed-column{display:block!important;width:100%!important;max-width:100%!important;min-width:0!important;justify-self:auto!important;padding:24px 16px calc(104px + env(safe-area-inset-bottom))!important}
+  .detail-column{display:none!important}
+  .mobile-bottom-nav{position:fixed!important;display:grid!important;grid-template-columns:1fr 1fr 52px 1fr 1fr!important;left:0!important;right:0!important;bottom:0!important;width:100dvw!important}
+}

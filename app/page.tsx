@@ -68,6 +68,21 @@ export default function HomePage() {
   }, [loadWorkspace]);
 
   useEffect(() => {
+    const resetHorizontalScroll = () => {
+      document.documentElement.scrollLeft = 0;
+      document.body.scrollLeft = 0;
+      window.scrollTo(0, window.scrollY);
+    };
+    resetHorizontalScroll();
+    window.addEventListener("resize", resetHorizontalScroll);
+    window.addEventListener("orientationchange", resetHorizontalScroll);
+    return () => {
+      window.removeEventListener("resize", resetHorizontalScroll);
+      window.removeEventListener("orientationchange", resetHorizontalScroll);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!selected || !supabase) { setComments([]); return; }
     void supabase.from("case_comments").select("id,body,created_at,profiles!case_comments_author_id_fkey(id,full_name,initials,avatar_url)").eq("case_id", selected.id).order("created_at").then(({ data }) => setComments((data ?? []) as unknown as typeof comments));
   }, [selected?.id]);
