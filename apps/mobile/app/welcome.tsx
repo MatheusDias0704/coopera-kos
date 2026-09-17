@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
 import { Feather } from "@expo/vector-icons";
-import { mobileClient } from "@/src/features/mobile-client";
+import { LEGAL_CONSENT_REQUIRED, mobileClient } from "@/src/features/mobile-client";
 import { colors, type } from "@/src/theme/tokens";
 
 type Mode = "login" | "invite";
@@ -21,7 +21,13 @@ export default function WelcomeScreen() {
         return;
       }
       router.replace("/(tabs)/cases");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível continuar."); } finally { setLoading(false); }
+    } catch (cause) {
+      if (cause instanceof Error && cause.message === LEGAL_CONSENT_REQUIRED) {
+        router.replace("/legal");
+        return;
+      }
+      setError(cause instanceof Error ? cause.message : "Não foi possível continuar.");
+    } finally { setLoading(false); }
   };
   return <View style={styles.page}>
     <View style={styles.orbitOne} /><View style={styles.orbitTwo} />

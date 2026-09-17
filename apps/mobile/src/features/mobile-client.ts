@@ -4,6 +4,9 @@ import { createCoopera } from "@coopera/data-supabase";
 import type { CaseRecord } from "@coopera/domain";
 import type { ActiveMember, AppNotification, CaseComment, ClinicalCase, DirectMessage, MessagePerson } from "./models";
 
+export const LEGAL_CONSENT_REQUIRED = "LEGAL_CONSENT_REQUIRED";
+export type LegalStatus = { documents: Array<{ slug: string; version: string; title: string }>; accepted: boolean };
+
 export type MobileClient = {
   isConfigured(): boolean;
   signIn(email: string, password: string): Promise<ActiveMember>;
@@ -11,6 +14,8 @@ export type MobileClient = {
   register(input: { name: string; inviteCode: string; email: string; password: string }): Promise<ActiveMember>;
   currentMember(): Promise<ActiveMember | null>;
   logout(): Promise<void>;
+  legalStatus(): Promise<LegalStatus>;
+  acceptLegal(): Promise<void>;
   listCases(): Promise<ClinicalCase[]>;
   getCase(id: string): Promise<ClinicalCase | null>;
   listComments(caseId: string): Promise<CaseComment[]>;
@@ -86,8 +91,15 @@ function mapCase(record: CaseRecord): ClinicalCase {
   };
 }
 
+async function requireLegalConsent(userId: string) {
+  const { coopera } = ensureConfigured();
+  const consent = await coopera.legal.status(userId);
+  if (!consent.documents.length) throw new Error("Documentos legais indisponíveis. Contate o suporte antes de usar a comunidade.");
+  if (!consent.accepted) throw new Error(LEGAL_CONSENT_REQUIRED);
+}
+
 async function loadWorkspace(): Promise<ActiveMember> {
-  const { coopera, supabase } = ensureConfigured();
+  const { coopera } = ensureConfigured();
   const session = await coopera.identity.session();
   if (!session?.user) throw new Error("Entre com seu e-mail convidado para continuar.");
   const workspace = await coopera.cohorts.workspace(session.user.id);
@@ -100,11 +112,7 @@ async function loadWorkspace(): Promise<ActiveMember> {
     role: workspace.membership.role,
     cohortName: workspace.membership.cohorts?.name ?? "Turma Kós",
   };
-  const { data: legalStatus } = await supabase.from("legal_documents").select("slug").eq("active", true).limit(1);
-  if (legalStatus?.length) {
-    const consent = await coopera.legal.status(session.user.id);
-    if (!consent.accepted) await coopera.legal.accept();
-  }
+  await requireLegalConsent(session.user.id);
   return activeMember;
 }
 
@@ -141,6 +149,17 @@ export const mobileClient: MobileClient = {
     activeMember = null;
     activeCohortId = null;
     await coopera.identity.logout();
+  },
+  async legalStatus() {
+    const { coopera } = ensureConfigured();
+    const session = await coopera.identity.session();
+    if (!session?.user) throw new Error("Entre para revisar os documentos.");
+    return coopera.legal.status(session.user.id);
+  },
+  async acceptLegal() {
+    const { coopera } = ensureConfigured();
+    await coopera.legal.accept();
+    await loadWorkspace();
   },
   async listCases() {
     if (!activeCohortId) {
