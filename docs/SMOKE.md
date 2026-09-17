@@ -4,7 +4,7 @@ Registrar: commit, build web, build iOS/Android, ambiente, dispositivos, resulta
 
 ## Automático
 
-Depois de iniciar o build web, `node scripts/smoke.mjs` verifica `/api/health`, `/` e `/termos`. Para produção: `SMOKE_BASE_URL=https://app.institutokos.com.br node scripts/smoke.mjs`. Health confirma que o processo responde; não confirma disponibilidade do banco, envio de e-mail ou autorização.
+Depois de iniciar o build web, `node scripts/smoke.mjs` verifica `/api/health`, `/`, `/termos`, `/privacidade`, `/suporte`, `/remocao` e `/exclusao`. Para o deploy Vercel atual: `SMOKE_BASE_URL=https://coopera-kos.vercel.app node scripts/smoke.mjs`. Ao configurar o domínio próprio, repetir com `SMOKE_BASE_URL=https://app.institutokos.com.br node scripts/smoke.mjs`. O domínio próprio depende da configuração DNS/Hostinger do titular. Health confirma que o processo responde; não confirma disponibilidade do banco, envio de e-mail ou autorização.
 
 ## Web e mobile, em ambiente configurado
 

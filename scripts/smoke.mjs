@@ -8,7 +8,7 @@ const health = await response.json();
 assert.equal(health.status, "ok");
 assert.equal(health.service, "coopera-kos");
 assert.ok(Number.isFinite(Date.parse(health.timestamp)), "Health timestamp must be valid");
-for (const path of ["/", "/termos"]) {
+for (const path of ["/", "/termos", "/privacidade", "/suporte", "/remocao", "/exclusao"]) {
   const page = await fetch(new URL(path, baseUrl), { signal: AbortSignal.timeout(10_000) });
   assert.equal(page.status, 200, `${path} must be publicly reachable`);
 }
