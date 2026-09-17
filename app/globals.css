@@ -52,3 +52,27 @@ button,input,textarea,select{-webkit-tap-highlight-color:transparent}
 
 .auth-switch{display:grid;grid-template-columns:1fr 1fr;width:min(100%,300px);margin:0 0 31px;border-bottom:1px solid rgba(252,240,206,.25)}.auth-switch button{min-height:43px;color:#bdb8aa;font:600 13px Sora,sans-serif;text-align:left;padding:0 2px;position:relative}.auth-switch button:last-child{text-align:right}.auth-switch button.active{color:#fff}.auth-switch button.active:after{content:"";position:absolute;inset:auto 0 -1px;height:2px;background:#dbbe6d}.auth-consent{grid-template-columns:18px minmax(0,1fr)!important;align-items:start!important;gap:9px!important;color:#d4d0c7!important;font-size:12px!important;font-weight:400!important;line-height:1.55}.auth-consent input{width:16px;height:16px;margin:2px 0 0;accent-color:#dbbe6d}.auth-consent a{color:#f3d781;text-decoration:underline;text-underline-offset:3px}.google-auth{width:100%;min-height:50px;margin-top:18px;border:1px solid rgba(252,240,206,.34);border-radius:4px;color:#fff;font:600 13px Sora,sans-serif;transition:border-color .2s,background .2s}.google-auth:hover{border-color:#dbbe6d;background:rgba(255,255,255,.07)}
 @media(max-width:800px){.login-form input{font-size:16px}.auth-switch{margin-bottom:26px}.auth-consent{font-size:12px!important}.auth-shell{overflow:auto}.auth-panel{padding-bottom:28px}}
+
+/* Mobile viewport guard: keeps the app from rendering as a shrunken desktop. */
+html,body{max-width:100%;overflow-x:hidden}
+@media(max-width:800px){
+  .app-shell,.workspace,.content-area,.feed-column{width:100%!important;max-width:100%!important;min-width:0!important}
+  .app-shell,.workspace,.content-area{overflow-x:hidden}
+  .workspace{margin-left:0!important}
+  .content-area{display:block!important;margin:0!important;padding:0 0 96px!important}
+  .feed-column{justify-self:auto!important;padding:24px 16px calc(104px + env(safe-area-inset-bottom))!important}
+  .editorial-head,.editorial-copy,.privacy-banner,.discovery-row{width:100%;max-width:100%}
+  .editorial-head h1{max-width:100%;font-size:clamp(31px,10vw,38px)!important;line-height:.98;letter-spacing:-1.3px;overflow-wrap:anywhere}
+  .editorial-head em{display:block}
+  .weekly-note{max-width:260px}
+  .community-pulse{width:calc(100% + 32px);max-width:none;margin-left:-16px;margin-right:-16px}
+  .community-pulse div{min-width:0;padding:12px 10px}
+  .community-pulse span{font-size:8px}
+  .community-pulse b{font-size:15px}
+  .search-box{min-width:0}
+  .mobile-bottom-nav{width:100%}
+}
+@media(max-width:380px){
+  .feed-column{padding-left:14px!important;padding-right:14px!important}
+  .editorial-head h1{font-size:30px!important}
+}
