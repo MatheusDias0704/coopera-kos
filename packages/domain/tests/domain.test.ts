@@ -49,3 +49,8 @@ test("reports have exactly one target and admin cannot revoke self", () => {
   assert.throws(() => Messaging.block("a", "a"));
   assert.deepEqual(Messaging.block("a", "b"), { blocker_id: "a", blocked_id: "b" });
 });
+
+test("mentor summary validates minimum length before database insert", () => {
+  assert.throws(() => Discussion.summary("tudo beemm"), /20 a 8000/);
+  assert.equal(Discussion.summary("Síntese educacional objetiva."), "Síntese educacional objetiva.");
+});
